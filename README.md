@@ -1,7 +1,3 @@
-Claro. Te recomiendo que el README no sea solo para tus compañeros, sino para **cualquier persona que clone el repositorio**: qué es TripMeet, requisitos, instalación, Firebase, ejecución y flujo de Git.
-
-Te dejo una versión lista para reemplazar tu `README.md`:
-
 # TripMeet
 
 TripMeet es una aplicación móvil desarrollada con **Flutter** que busca transformar la manera de viajar, permitiendo a las personas **descubrir lugares, compartir experiencias y conectar con otros viajeros**.
