@@ -4,14 +4,79 @@ import 'package:firebase_auth/firebase_auth.dart';
 /// Servicio encargado del registro y la persistencia de usuarios.
 class AuthService {
   /// Permite inyectar las dependencias para facilitar pruebas y reutilización.
-  AuthService({
-    FirebaseAuth? auth,
-    FirebaseFirestore? firestore,
-  })  : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance;
+  AuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
+    : _auth = auth ?? FirebaseAuth.instance,
+      _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
+
+  /// Inicia sesión con una cuenta existente de Firebase Authentication.
+  Future<UserCredential> iniciarSesion(String correo, String password) async {
+    try {
+      return await _auth.signInWithEmailAndPassword(
+        email: correo.trim(),
+        password: password,
+      );
+    } on FirebaseAuthException catch (error) {
+      throw AuthServiceException(
+        _mensajeParaErrorDeLogin(error.code),
+        code: error.code,
+      );
+    } catch (_) {
+      throw const AuthServiceException(
+        'Ocurrió un error inesperado al iniciar sesión. Inténtalo de nuevo.',
+        code: 'unknown-error',
+      );
+    }
+  }
+
+  /// Consulta el rol del usuario autenticado en su perfil de Firestore.
+  Future<String> obtenerRolUsuarioActual() async {
+    final User? usuario = _auth.currentUser;
+    if (usuario == null) {
+      throw const AuthServiceException(
+        'No hay un usuario autenticado para consultar su rol.',
+        code: 'user-not-authenticated',
+      );
+    }
+
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> perfil =
+          await _firestore.collection('usuarios').doc(usuario.uid).get();
+
+      if (!perfil.exists) {
+        throw const AuthServiceException(
+          'No se encontró el perfil del usuario.',
+          code: 'user-profile-not-found',
+        );
+      }
+
+      final dynamic rol = perfil.data()?['rol'];
+      if (rol is! String || rol.trim().isEmpty) {
+        throw const AuthServiceException(
+          'El perfil del usuario no tiene un rol asignado.',
+          code: 'user-role-missing',
+        );
+      }
+
+      return rol.trim();
+    } on AuthServiceException {
+      rethrow;
+    } on FirebaseException catch (error) {
+      throw AuthServiceException(
+        error.code == 'unavailable' || error.code == 'network-request-failed'
+            ? 'No se pudo consultar el rol por un problema de conexión.'
+            : 'No se pudo consultar el rol del usuario. Inténtalo de nuevo.',
+        code: error.code,
+      );
+    } catch (_) {
+      throw const AuthServiceException(
+        'No se pudo consultar el rol del usuario. Inténtalo de nuevo.',
+        code: 'user-role-lookup-failed',
+      );
+    }
+  }
 
   /// Registra un usuario en Firebase Authentication y crea su perfil en Firestore.
   ///
@@ -24,11 +89,11 @@ class AuthService {
   ) async {
     try {
       // Primero se crea la cuenta para obtener el UID que identifica al usuario.
-      final UserCredential credenciales =
-          await _auth.createUserWithEmailAndPassword(
-        email: correo.trim(),
-        password: password,
-      );
+      final UserCredential credenciales = await _auth
+          .createUserWithEmailAndPassword(
+            email: correo.trim(),
+            password: password,
+          );
 
       final User? usuario = credenciales.user;
       if (usuario == null) {
@@ -66,6 +131,28 @@ class AuthService {
         'Ocurrió un error inesperado al registrar el usuario.',
         code: 'unknown-error',
       );
+    }
+  }
+
+  String _mensajeParaErrorDeLogin(String codigo) {
+    switch (codigo) {
+      case 'invalid-email':
+        return 'El correo electrónico no tiene un formato válido.';
+      case 'user-not-found':
+        return 'No existe una cuenta con este correo electrónico.';
+      case 'wrong-password':
+      case 'invalid-credential':
+        return 'El correo electrónico o la contraseña son incorrectos.';
+      case 'network-request-failed':
+        return 'No hay conexión a Internet. Inténtalo de nuevo.';
+      case 'user-disabled':
+        return 'Esta cuenta está deshabilitada.';
+      case 'too-many-requests':
+        return 'Demasiados intentos. Inténtalo de nuevo más tarde.';
+      case 'operation-not-allowed':
+        return 'El inicio de sesión con correo y contraseña no está habilitado.';
+      default:
+        return 'No se pudo iniciar sesión. Inténtalo de nuevo.';
     }
   }
 

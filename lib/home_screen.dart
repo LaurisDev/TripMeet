@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 ///
 /// Más adelante aquí se mostrarán las publicaciones y planes de otros usuarios.
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.rol});
+
+  final String? rol;
 
   @override
   Widget build(BuildContext context) {
