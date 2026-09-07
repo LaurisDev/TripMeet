@@ -102,12 +102,13 @@ class _RegistroScreenState extends State<RegistroScreen> {
                             children: [
                               // --- HEADER ---
                               Text(
-                                'Únete a la comunidad global.',
-                                style: GoogleFonts.fraunces(
-                                  fontSize: esPantallaPequena ? 28 : 32,
-                                  fontWeight: FontWeight.w700,
+                                'Únete a la comunidad global',
+                                style: GoogleFonts.workSans(
+                                  fontSize: esPantallaPequena ? 22 : 24,
+                                  fontWeight: FontWeight.w600,
                                   color: AppTheme.azulPetroleo,
-                                  height: 1.1,
+                                  height: 1.2,
+                                  letterSpacing: -0.2,
                                 ),
                               ),
                               const SizedBox(height: 4),
