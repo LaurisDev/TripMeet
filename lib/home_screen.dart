@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
+import 'buscar_lugares_screen.dart';  
 
 /// Placeholder temporal del feed principal de TripMeet.
 ///
@@ -45,6 +46,17 @@ class HomeScreen extends StatelessWidget {
                 ),
                 child: Row(
                   children: <Widget>[
+                    IconButton(
+  icon: const Icon(Icons.search),
+  onPressed: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const BuscarLugaresScreen(),
+      ),
+    );
+  },
+),
                     const Icon(
                       Icons.travel_explore,
                       size: 64,
