@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'buscar_lugares_screen.dart';
+import 'mapa_exploracion_screen.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, this.rol});
+  const HomeScreen({super.key, this.rol, this.avisoRevision});
 
   final String? rol;
+  final String? avisoRevision;
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +21,7 @@ class HomeScreen extends StatelessWidget {
         child: SingleChildScrollView(
           child: Column(
             children: <Widget>[
-              // ENCABEZADO MEJORADO
+              // ENCABEZADO MEJORADO (Anderson)
               Container(
                 width: double.infinity,
                 padding: EdgeInsets.fromLTRB(
@@ -52,7 +54,6 @@ class HomeScreen extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: <Widget>[
-                    // Logo y Título
                     Row(
                       children: [
                         const Icon(
@@ -72,7 +73,6 @@ class HomeScreen extends StatelessWidget {
                         ),
                       ],
                     ),
-                    // Botón de Búsqueda Estilizado
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.2),
@@ -98,12 +98,26 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
 
+              if (avisoRevision != null)
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Material(
+                    color: Colors.amber.shade100,
+                    elevation: 2,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(avisoRevision!, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ),
+
               // CONTENIDO PRINCIPAL
               Padding(
                 padding: const EdgeInsets.all(28.0),
                 child: Column(
                   children: <Widget>[
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 20),
                     Container(
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
@@ -145,8 +159,33 @@ class HomeScreen extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 40),
-                    // Un botón de acceso rápido a tu función de búsqueda
+                    const SizedBox(height: 30),
+                    
+                    // Botón para el Mapa (July)
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const MapaExploracionScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.map_outlined),
+                      label: const Text('Ver Mapa de Exploración'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.azulPetroleo,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 15),
+
+                    // Botón para Categorías (Anderson)
                     ElevatedButton.icon(
                       onPressed: () {
                         Navigator.push(
@@ -156,7 +195,7 @@ class HomeScreen extends StatelessWidget {
                           ),
                         );
                       },
-                      icon: const Icon(Icons.map_rounded),
+                      icon: const Icon(Icons.category_rounded),
                       label: const Text('Explorar Categorías'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.verdeAzulado,
