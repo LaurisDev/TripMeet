@@ -4,11 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 /// Servicio encargado del registro y la persistencia de usuarios.
 class AuthService {
   /// Permite inyectar las dependencias para facilitar pruebas y reutilización.
-  AuthService({
-    FirebaseAuth? auth,
-    FirebaseFirestore? firestore,
-  })  : _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance;
+  AuthService({FirebaseAuth? auth, FirebaseFirestore? firestore})
+    : _auth = auth ?? FirebaseAuth.instance,
+      _firestore = firestore ?? FirebaseFirestore.instance;
 
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
@@ -24,11 +22,11 @@ class AuthService {
   ) async {
     try {
       // Primero se crea la cuenta para obtener el UID que identifica al usuario.
-      final UserCredential credenciales =
-          await _auth.createUserWithEmailAndPassword(
-        email: correo.trim(),
-        password: password,
-      );
+      final UserCredential credenciales = await _auth
+          .createUserWithEmailAndPassword(
+            email: correo.trim(),
+            password: password,
+          );
 
       final User? usuario = credenciales.user;
       if (usuario == null) {
@@ -69,6 +67,26 @@ class AuthService {
     }
   }
 
+  /// Inicia sesión con las credenciales de Firebase Authentication.
+  Future<UserCredential> iniciarSesion(String correo, String password) async {
+    try {
+      return await _auth.signInWithEmailAndPassword(
+        email: correo.trim(),
+        password: password,
+      );
+    } on FirebaseAuthException catch (error) {
+      throw AuthServiceException(
+        _mensajeParaErrorDeAuth(error.code),
+        code: error.code,
+      );
+    } catch (_) {
+      throw const AuthServiceException(
+        'Ocurrió un error inesperado al iniciar sesión.',
+        code: 'unknown-error',
+      );
+    }
+  }
+
   /// Devuelve un mensaje en español para los errores habituales de Auth.
   String _mensajeParaErrorDeAuth(String codigo) {
     switch (codigo) {
@@ -82,6 +100,12 @@ class AuthService {
         return 'El registro con correo y contraseña no está habilitado.';
       case 'network-request-failed':
         return 'No hay conexión a Internet. Inténtalo de nuevo.';
+      case 'invalid-credential':
+      case 'user-not-found':
+      case 'wrong-password':
+        return 'El correo o la contraseña no son correctos.';
+      case 'user-disabled':
+        return 'Esta cuenta está deshabilitada.';
       default:
         return 'No se pudo registrar el usuario. Inténtalo de nuevo.';
     }

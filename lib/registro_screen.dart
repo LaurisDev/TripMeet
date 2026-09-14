@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
 import 'home_screen.dart';
+import 'login_screen.dart';
 
 /// Pantalla de registro con imagen de fondo sutil y tarjeta elegante.
 class RegistroScreen extends StatefulWidget {
@@ -85,7 +86,9 @@ class _RegistroScreenState extends State<RegistroScreen> {
                   SizedBox(height: altoPantalla * 0.15),
                   // --- TARJETA PRINCIPAL ---
                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: paddingHorizontal),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: paddingHorizontal,
+                    ),
                     child: Card(
                       color: Colors.white.withOpacity(0.92),
                       elevation: 12,
@@ -233,8 +236,9 @@ class _RegistroScreenState extends State<RegistroScreen> {
                                 decoration: InputDecoration(
                                   labelText: 'Confirmar contraseña',
                                   hintText: 'Confirma tu contraseña',
-                                  prefixIcon:
-                                      const Icon(Icons.lock_reset_outlined),
+                                  prefixIcon: const Icon(
+                                    Icons.lock_reset_outlined,
+                                  ),
                                   suffixIcon: IconButton(
                                     icon: Icon(
                                       _obscureConfirmPassword
@@ -375,7 +379,12 @@ class _RegistroScreenState extends State<RegistroScreen> {
                                   ),
                                   GestureDetector(
                                     onTap: () {
-                                      // Navegar a Login
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => const LoginScreen(),
+                                        ),
+                                      );
                                     },
                                     child: Text(
                                       ' Iniciar sesión',
@@ -415,7 +424,9 @@ class _RegistroScreenState extends State<RegistroScreen> {
           color: seleccionado ? AppTheme.naranjaQuemado : Colors.white,
           borderRadius: BorderRadius.circular(30),
           border: Border.all(
-            color: seleccionado ? AppTheme.naranjaQuemado : Colors.grey.shade300,
+            color: seleccionado
+                ? AppTheme.naranjaQuemado
+                : Colors.grey.shade300,
             width: 1.5,
           ),
           boxShadow: seleccionado
@@ -508,7 +519,9 @@ class _RegistroScreenState extends State<RegistroScreen> {
       setState(() => _cargando = false);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No se pudo completar el registro. Inténtalo de nuevo.'),
+          content: Text(
+            'No se pudo completar el registro. Inténtalo de nuevo.',
+          ),
         ),
       );
     }

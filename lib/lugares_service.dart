@@ -1,17 +1,21 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Lugar {
-  final String id;
   final String nombre;
   final String descripcion;
+  final String categoria;
   final String ubicacion;
+  final double latitud;
+  final double longitud;
   final List<String> fotos;
 
   Lugar({
-    required this.id,
     required this.nombre,
     required this.descripcion,
+    required this.categoria,
     required this.ubicacion,
+    required this.latitud,
+    required this.longitud,
     required this.fotos,
   });
 
@@ -21,17 +25,36 @@ class Lugar {
     final datos = documento.data() ?? {};
 
     return Lugar(
-      id: documento.id,
       nombre: datos['nombre'] as String? ?? '',
       descripcion: datos['descripcion'] as String? ?? '',
+      categoria: datos['categoria'] as String? ?? '',
       ubicacion: datos['Ubicacion'] as String? ?? '',
-      fotos: List<String>.from(datos['Fotos'] ?? []),
+      latitud: datos['latitud'] == null
+          ? 0.0
+          : (datos['latitud'] as num).toDouble(),
+      longitud: datos['longitud'] == null
+          ? 0.0
+          : (datos['longitud'] as num).toDouble(),
+      fotos: datos['Fotos'] == null
+          ? []
+          : (datos['Fotos'] as List<dynamic>)
+              .map((elemento) => elemento.toString())
+              .toList(),
     );
   }
 }
 
-class LugaresService {
+class LugarService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  Future<List<Lugar>> obtenerLugares() async {
+    final snapshot = await _firestore
+        .collection('Lugares')
+        .get()
+        .timeout(const Duration(seconds: 10));
+
+    return snapshot.docs.map(Lugar.fromFirestore).toList();
+  }
 
   Future<List<Lugar>> buscarLugares(String texto) async {
     final consulta = texto.trim().toLowerCase();
@@ -64,3 +87,5 @@ class LugaresService {
     return Lugar.fromFirestore(documento);
   }
 }
+
+typedef LugaresService = LugarService;
