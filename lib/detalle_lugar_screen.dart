@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'lugares_service.dart';
+import 'app_theme.dart';
 
 class DetalleLugarScreen extends StatefulWidget {
   final Lugar lugar;
@@ -44,121 +45,203 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
     final bool tieneFotos = widget.lugar.fotos.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Detalle del lugar'),
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _imagenPrincipal(tieneFotos),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
+      backgroundColor: Colors.white,
+      body: CustomScrollView(
+        slivers: [
+          // CABECERA COLAPSABLE CON IMAGEN (Diseño Premium)
+          SliverAppBar(
+            expandedHeight: 350,
+            pinned: true,
+            flexibleSpace: FlexibleSpaceBar(
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _imagenPrincipal(tieneFotos),
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.black54],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            leading: CircleAvatar(
+              backgroundColor: Colors.white.withOpacity(0.3),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+          ),
+
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Categoría (HU-07)
-                  if (widget.lugar.categoria.trim().isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.secondaryContainer,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        widget.lugar.categoria,
-                        style: TextStyle(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSecondaryContainer,
-                          fontWeight: FontWeight.w600,
-                        ),
+                  // Categoría con estilo badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.verdeAzulado.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      widget.lugar.categoria.toUpperCase(),
+                      style: TextStyle(
+                        color: AppTheme.verdeAzulado,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        letterSpacing: 1.1,
                       ),
                     ),
-                  const SizedBox(height: 12),
+                  ),
+                  const SizedBox(height: 16),
                   Text(
                     widget.lugar.nombre,
-                    style: Theme.of(context).textTheme.headlineMedium,
+                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: -0.5),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
                   Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.location_on_outlined),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          widget.lugar.ubicacion.isEmpty
-                              ? 'Ubicación no disponible'
-                              : widget.lugar.ubicacion,
-                          style: Theme.of(context).textTheme.bodyLarge,
-                        ),
+                      const Icon(Icons.location_on, color: Colors.redAccent, size: 18),
+                      const SizedBox(width: 4),
+                      Text(
+                        widget.lugar.ubicacion,
+                        style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 24),
-                  _seccionDescripcion(context, tieneDescripcion),
-                  const SizedBox(height: 24),
-                  _seccionFotos(context, tieneFotos),
-                  
                   const SizedBox(height: 32),
-
-                  // SECCIÓN DE RESEÑAS (HU-08 - Anderson)
-                  Text(
-                    'Reseñas de viajeros',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
+                  const Text('Sobre este lugar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
+                  Text(
+                    tieneDescripcion ? widget.lugar.descripcion : 'Sin descripción disponible.',
+                    style: TextStyle(fontSize: 16, color: Colors.black87, height: 1.6),
+                  ),
+                  const SizedBox(height: 32),
+                  _seccionFotos(context, tieneFotos),
+                  const SizedBox(height: 40),
+                  
+                  // --- SECCIÓN DE RESEÑAS INNOVADORA (HU-08) ---
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Experiencias', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                      if (_resenas.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(color: Colors.amber.shade100, borderRadius: BorderRadius.circular(8)),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.star, color: Colors.amber, size: 18),
+                              const SizedBox(width: 4),
+                              Text('${_calcularPromedio()}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
 
                   if (_cargandoResenas)
                     const Center(child: CircularProgressIndicator())
                   else if (_resenas.isEmpty)
-                    const Text('Aún no hay reseñas. ¡Sé el primero en compartir tu experiencia!')
+                    _pantallaVaciaResenas()
                   else
                     ListView.builder(
                       shrinkWrap: true,
+                      padding: EdgeInsets.zero,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _resenas.length,
                       itemBuilder: (context, index) {
                         final r = _resenas[index];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(r.usuario, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                    Row(
-                                      children: List.generate(5, (i) {
-                                        return Icon(
-                                          Icons.star,
-                                          size: 16,
-                                          color: i < r.calificacion ? Colors.amber : Colors.grey,
-                                        );
-                                      }),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Text(r.comentario),
-                              ],
-                            ),
-                          ),
-                        );
+                        return _tarjetaResenaModerna(r);
                       },
                     ),
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _calcularPromedio() {
+    if (_resenas.isEmpty) return 0.0;
+    double suma = _resenas.fold(0, (prev, element) => prev + element.calificacion);
+    return double.parse((suma / _resenas.length).toStringAsFixed(1));
+  }
+
+  Widget _tarjetaResenaModerna(Resena r) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBFBFB),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.black.withOpacity(0.03)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: AppTheme.azulPetroleo.withOpacity(0.1),
+                child: Text(r.usuario[0].toUpperCase(), style: TextStyle(color: AppTheme.azulPetroleo, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(r.usuario, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text('Viajero verificado', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
+                  ],
+                ),
+              ),
+              Row(
+                children: List.generate(5, (i) => Icon(
+                  Icons.star_rounded,
+                  size: 18,
+                  color: i < r.calificacion ? Colors.amber : Colors.grey.shade300,
+                )),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            r.comentario,
+            style: TextStyle(color: Colors.black87.withOpacity(0.8), height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pantallaVaciaResenas() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.black.withOpacity(0.05), style: BorderStyle.none),
+      ),
+      child: const Column(
+        children: [
+          Icon(Icons.chat_bubble_outline_rounded, size: 40, color: Colors.grey),
+          SizedBox(height: 12),
+          Text('Nadie ha comentado aún', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
+          Text('¡Sé el primero en calificar este lugar!', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+        ],
       ),
     );
   }
@@ -166,86 +249,33 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
   Widget _imagenPrincipal(bool tieneFotos) {
     if (!tieneFotos) {
       return Container(
-        height: 220,
-        width: double.infinity,
-        color: Colors.grey.shade300,
+        color: Colors.grey.shade200,
         alignment: Alignment.center,
-        child: const Icon(Icons.landscape_outlined, size: 64),
+        child: const Icon(Icons.image_not_supported_outlined, size: 64, color: Colors.grey),
       );
     }
-
-    return SizedBox(
-      height: 260,
-      width: double.infinity,
-      child: Image.network(
-        widget.lugar.fotos.first,
-        fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Container(
-          color: Colors.grey.shade300,
-          alignment: Alignment.center,
-          child: const Icon(Icons.broken_image_outlined, size: 52),
-        ),
-      ),
-    );
-  }
-
-  Widget _seccionDescripcion(BuildContext context, bool tieneDescripcion) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Descripción', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 10),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.black12),
-          ),
-          child: Text(
-            tieneDescripcion
-                ? widget.lugar.descripcion
-                : 'La información de este lugar aún no está disponible.',
-            style: Theme.of(context).textTheme.bodyLarge
-                ?.copyWith(height: 1.45),
-          ),
-        ),
-      ],
-    );
+    return Image.network(widget.lugar.fotos.first, fit: BoxFit.cover);
   }
 
   Widget _seccionFotos(BuildContext context, bool tieneFotos) {
+    if (!tieneFotos) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Fotos', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 10),
-        if (!tieneFotos)
-          const Text('No hay fotos disponibles.')
-        else
-          SizedBox(
-            height: 120,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: widget.lugar.fotos.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (context, index) => ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  widget.lugar.fotos[index],
-                  width: 170,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
-                    width: 170,
-                    color: Colors.grey.shade300,
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.broken_image_outlined),
-                  ),
-                ),
-              ),
+        const Text('Galería', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 150,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: widget.lugar.fotos.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, index) => ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.network(widget.lugar.fotos[index], width: 220, fit: BoxFit.cover),
             ),
           ),
+        ),
       ],
     );
   }
