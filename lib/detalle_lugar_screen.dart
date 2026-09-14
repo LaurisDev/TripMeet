@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'lugares_service.dart';
 import 'app_theme.dart';
 
@@ -16,8 +17,10 @@ class DetalleLugarScreen extends StatefulWidget {
 
 class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
   final LugaresService _lugaresService = LugaresService();
+  final TextEditingController _comentarioController = TextEditingController();
   List<Resena> _resenas = [];
   bool _cargandoResenas = true;
+  double _estrellasSeleccionadas = 5;
 
   @override
   void initState() {
@@ -33,9 +36,39 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
         _cargandoResenas = false;
       });
     } catch (e) {
-      setState(() {
-        _cargandoResenas = false;
+      setState(() => _cargandoResenas = false);
+    }
+  }
+
+  Future<void> _guardarResena(BuildContext context) async {
+    if (_comentarioController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Por favor, escribe un comentario')),
+      );
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('Lugares')
+          .doc(widget.lugar.id)
+          .collection('Resenas')
+          .add({
+        'usuario': 'Viajero', 
+        'comentario': _comentarioController.text.trim(),
+        'calificacion': _estrellasSeleccionadas,
+        'fecha': FieldValue.serverTimestamp(),
       });
+
+      _comentarioController.clear();
+      if (mounted) Navigator.pop(context);
+      _cargarResenas(); 
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error al guardar tu reseña')),
+        );
+      }
     }
   }
 
@@ -46,11 +79,16 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
 
     return Scaffold(
       backgroundColor: Colors.white,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _mostrarFormularioResena(context),
+        backgroundColor: AppTheme.verdeAzulado,
+        icon: const Icon(Icons.rate_review_rounded, color: Colors.white),
+        label: const Text('Calificar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
       body: CustomScrollView(
         slivers: [
-          // CABECERA COLAPSABLE CON IMAGEN (Diseño Premium)
           SliverAppBar(
-            expandedHeight: 350,
+            expandedHeight: 320,
             pinned: true,
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
@@ -62,89 +100,63 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black54],
+                        colors: [Colors.transparent, Colors.black45],
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-            leading: CircleAvatar(
-              backgroundColor: Colors.white.withOpacity(0.3),
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
-                onPressed: () => Navigator.pop(context),
+            leading: Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: CircleAvatar(
+                backgroundColor: Colors.black26,
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                ),
               ),
             ),
           ),
 
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 100),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Categoría con estilo badge
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: AppTheme.verdeAzulado.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
+                      color: AppTheme.azulPetroleo.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Text(
-                      widget.lugar.categoria.toUpperCase(),
-                      style: TextStyle(
-                        color: AppTheme.verdeAzulado,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        letterSpacing: 1.1,
-                      ),
-                    ),
+                    child: Text(widget.lugar.categoria, style: TextStyle(color: AppTheme.azulPetroleo, fontWeight: FontWeight.bold, fontSize: 12)),
                   ),
                   const SizedBox(height: 16),
-                  Text(
-                    widget.lugar.nombre,
-                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: -0.5),
-                  ),
+                  Text(widget.lugar.nombre, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.location_on, color: Colors.redAccent, size: 18),
+                      const Icon(Icons.location_on, color: AppTheme.verdeAzulado, size: 18),
                       const SizedBox(width: 4),
-                      Text(
-                        widget.lugar.ubicacion,
-                        style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
-                      ),
+                      Text(widget.lugar.ubicacion, style: TextStyle(color: Colors.grey.shade600, fontSize: 16)),
                     ],
                   ),
                   const SizedBox(height: 32),
                   const Text('Sobre este lugar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
-                  Text(
-                    tieneDescripcion ? widget.lugar.descripcion : 'Sin descripción disponible.',
-                    style: TextStyle(fontSize: 16, color: Colors.black87, height: 1.6),
-                  ),
+                  Text(tieneDescripcion ? widget.lugar.descripcion : 'Sin descripción.', style: const TextStyle(fontSize: 16, height: 1.5)),
                   const SizedBox(height: 32),
                   _seccionFotos(context, tieneFotos),
                   const SizedBox(height: 40),
                   
-                  // --- SECCIÓN DE RESEÑAS INNOVADORA (HU-08) ---
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Experiencias', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
                       if (_resenas.isNotEmpty)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.amber.shade100, borderRadius: BorderRadius.circular(8)),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.star, color: Colors.amber, size: 18),
-                              const SizedBox(width: 4),
-                              Text('${_calcularPromedio()}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                        ),
+                        _badgeCalificacion(),
                     ],
                   ),
                   const SizedBox(height: 20),
@@ -152,17 +164,17 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
                   if (_cargandoResenas)
                     const Center(child: CircularProgressIndicator())
                   else if (_resenas.isEmpty)
-                    _pantallaVaciaResenas()
+                    const Center(child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Text('Nadie ha comentado aún. ¡Sé el primero!'),
+                    ))
                   else
                     ListView.builder(
                       shrinkWrap: true,
                       padding: EdgeInsets.zero,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _resenas.length,
-                      itemBuilder: (context, index) {
-                        final r = _resenas[index];
-                        return _tarjetaResenaModerna(r);
-                      },
+                      itemBuilder: (context, index) => _tarjetaResenaModerna(_resenas[index]),
                     ),
                 ],
               ),
@@ -173,88 +185,91 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
     );
   }
 
-  double _calcularPromedio() {
-    if (_resenas.isEmpty) return 0.0;
-    double suma = _resenas.fold(0, (prev, element) => prev + element.calificacion);
-    return double.parse((suma / _resenas.length).toStringAsFixed(1));
+  void _mostrarFormularioResena(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+      builder: (context) => StatefulBuilder( // IMPORTANTE: Para que las estrellas cambien de color al tocarlas
+        builder: (context, setModalState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 24, right: 24, top: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('¿Cómo fue tu viaje?', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 15),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (index) => IconButton(
+                  onPressed: () => setModalState(() => _estrellasSeleccionadas = index + 1.0),
+                  icon: Icon(Icons.star_rounded, size: 40, color: index < _estrellasSeleccionadas ? Colors.amber : Colors.grey.shade300),
+                )),
+              ),
+              const SizedBox(height: 15),
+              TextField(
+                controller: _comentarioController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Cuéntanos tu experiencia...',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                ),
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => _guardarResena(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.azulPetroleo,
+                  minimumSize: const Size(double.infinity, 55),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                ),
+                child: const Text('Publicar Comentario', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 30),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _badgeCalificacion() {
+    double suma = _resenas.fold(0, (p, e) => p + e.calificacion);
+    double promedio = double.parse((suma / _resenas.length).toStringAsFixed(1));
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(color: Colors.amber.shade100, borderRadius: BorderRadius.circular(8)),
+      child: Row(children: [const Icon(Icons.star, color: Colors.amber, size: 18), const SizedBox(width: 4), Text('$promedio', style: const TextStyle(fontWeight: FontWeight.bold))]),
+    );
   }
 
   Widget _tarjetaResenaModerna(Resena r) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFBFBFB),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.black.withOpacity(0.03)),
-      ),
+      decoration: BoxDecoration(color: const Color(0xFFFBFBFB), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.black.withOpacity(0.03))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              CircleAvatar(
-                backgroundColor: AppTheme.azulPetroleo.withOpacity(0.1),
-                child: Text(r.usuario[0].toUpperCase(), style: TextStyle(color: AppTheme.azulPetroleo, fontWeight: FontWeight.bold)),
-              ),
+              CircleAvatar(backgroundColor: AppTheme.verdeAzulado.withOpacity(0.1), child: Text(r.usuario.isNotEmpty ? r.usuario[0] : 'U', style: const TextStyle(fontWeight: FontWeight.bold))),
               const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(r.usuario, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    Text('Viajero verificado', style: TextStyle(color: Colors.grey.shade500, fontSize: 12)),
-                  ],
-                ),
-              ),
-              Row(
-                children: List.generate(5, (i) => Icon(
-                  Icons.star_rounded,
-                  size: 18,
-                  color: i < r.calificacion ? Colors.amber : Colors.grey.shade300,
-                )),
-              ),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(r.usuario, style: const TextStyle(fontWeight: FontWeight.bold)), const Text('Viajero verificado', style: TextStyle(color: Colors.grey, fontSize: 12))])),
+              Row(children: List.generate(5, (i) => Icon(Icons.star_rounded, size: 16, color: i < r.calificacion ? Colors.amber : Colors.grey.shade300))),
             ],
           ),
           const SizedBox(height: 12),
-          Text(
-            r.comentario,
-            style: TextStyle(color: Colors.black87.withOpacity(0.8), height: 1.4),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _pantallaVaciaResenas() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.black.withOpacity(0.05), style: BorderStyle.none),
-      ),
-      child: const Column(
-        children: [
-          Icon(Icons.chat_bubble_outline_rounded, size: 40, color: Colors.grey),
-          SizedBox(height: 12),
-          Text('Nadie ha comentado aún', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
-          Text('¡Sé el primero en calificar este lugar!', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+          Text(r.comentario, style: const TextStyle(color: Colors.black87, height: 1.4)),
         ],
       ),
     );
   }
 
   Widget _imagenPrincipal(bool tieneFotos) {
-    if (!tieneFotos) {
-      return Container(
-        color: Colors.grey.shade200,
-        alignment: Alignment.center,
-        child: const Icon(Icons.image_not_supported_outlined, size: 64, color: Colors.grey),
-      );
-    }
-    return Image.network(widget.lugar.fotos.first, fit: BoxFit.cover);
+    return tieneFotos ? Image.network(widget.lugar.fotos.first, fit: BoxFit.cover) : Container(color: Colors.grey.shade200, child: const Icon(Icons.image_not_supported_outlined, size: 64));
   }
 
   Widget _seccionFotos(BuildContext context, bool tieneFotos) {
@@ -264,18 +279,7 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
       children: [
         const Text('Galería', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
-        SizedBox(
-          height: 150,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: widget.lugar.fotos.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, index) => ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Image.network(widget.lugar.fotos[index], width: 220, fit: BoxFit.cover),
-            ),
-          ),
-        ),
+        SizedBox(height: 150, child: ListView.separated(scrollDirection: Axis.horizontal, itemCount: widget.lugar.fotos.length, separatorBuilder: (_, __) => const SizedBox(width: 12), itemBuilder: (context, index) => ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.network(widget.lugar.fotos[index], width: 220, fit: BoxFit.cover)))),
       ],
     );
   }

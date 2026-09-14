@@ -16,19 +16,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _indiceActual = 0;
 
-  // Lista de pantallas integradas de todos los compañeros
-  late final List<Widget> _pantallas;
-
-  @override
-  void initState() {
-    super.initState();
-    _pantallas = [
-      _buildInicio(),               // Tu diseño innovador
-      const BuscarLugaresScreen(),  // Tu HU-07 (Categorías)
-      const MapaExploracionScreen(), // Lo de July (Mapa)
-      const Center(child: Text('Perfil próximamente')), // Espacio para Lau/Felipe
-    ];
-  }
+  // Lista de pantallas integradas
+  final List<Widget> _pantallas = [
+    const InicioTab(),             // Movido a un widget separado para evitar el error de MediaQuery
+    const BuscarLugaresScreen(),  
+    const MapaExploracionScreen(), 
+    const Center(child: Text('Perfil próximamente')), 
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -49,8 +43,14 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+}
 
-  Widget _buildInicio() {
+// Sub-widget para la pestaña de Inicio para evitar errores de contexto
+class InicioTab extends StatelessWidget {
+  const InicioTab({super.key});
+
+  @override
+  Widget build(BuildContext context) {
     final double anchoPantalla = MediaQuery.of(context).size.width;
     final bool esPantallaPequena = anchoPantalla < 360;
     final double paddingHorizontal = esPantallaPequena ? 20 : 28;
@@ -61,7 +61,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: SingleChildScrollView(
           child: Column(
             children: <Widget>[
-              // ENCABEZADO ANDERSON
               Container(
                 width: double.infinity,
                 padding: EdgeInsets.fromLTRB(paddingHorizontal, 32, paddingHorizontal, 40),
@@ -87,9 +86,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ),
-              
-              if (widget.avisoRevision != null)
-                _avisoAlerta(widget.avisoRevision!),
 
               Padding(
                 padding: const EdgeInsets.all(28.0),
@@ -98,11 +94,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 20),
                     _tarjetaBienvenida(),
                     const SizedBox(height: 30),
-                    Text('Acciones rápidas', style: Theme.of(context).textTheme.titleLarge),
+                    const Text('Acciones rápidas', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 15),
-                    _botonAccion('Ir al Mapa', Icons.map, () => setState(() => _indiceActual = 2)),
+                    _botonAccion(context, 'Explorar Mapa', Icons.map, Colors.blueGrey),
                     const SizedBox(height: 10),
-                    _botonAccion('Buscar por Categoría', Icons.category, () => setState(() => _indiceActual = 1)),
+                    _botonAccion(context, 'Buscar Categorías', Icons.category, AppTheme.azulPetroleo),
                   ],
                 ),
               ),
@@ -119,42 +115,40 @@ class _HomeScreenState extends State<HomeScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20)],
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 20)],
       ),
       child: const Column(
         children: [
           Icon(Icons.explore_rounded, size: 80, color: AppTheme.verdeAzulado),
           SizedBox(height: 16),
-          Text('¡Todo integrado Anderson! 🌍', 
+          Text('¡Todo listo, Anderson! 🌍', 
             style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppTheme.azulPetroleo)),
           SizedBox(height: 12),
-          Text('Ahora puedes ver el mapa de tus compañeros y tus propias categorías en la barra de abajo.',
+          Text('Usa la barra de navegación de abajo para moverte entre tus categorías y el mapa del equipo.',
             textAlign: TextAlign.center, style: TextStyle(color: Colors.black54)),
         ],
       ),
     );
   }
 
-  Widget _botonAccion(String texto, IconData icono, VoidCallback accion) {
-    return ElevatedButton.icon(
-      onPressed: accion,
-      icon: Icon(icono),
-      label: Text(texto),
-      style: ElevatedButton.styleFrom(
-        minimumSize: const Size(double.infinity, 55),
-        backgroundColor: AppTheme.azulPetroleo,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-      ),
-    );
-  }
-
-  Widget _avisoAlerta(String texto) {
+  Widget _botonAccion(BuildContext context, String texto, IconData icono, Color color) {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.amber.shade100, borderRadius: BorderRadius.circular(12)),
-      child: Text(texto, style: const TextStyle(fontWeight: FontWeight.bold)),
+      width: double.infinity,
+      height: 55,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(15),
+      ),
+      child: Center(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icono, color: Colors.white),
+            const SizedBox(width: 10),
+            Text(texto, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
     );
   }
 }
