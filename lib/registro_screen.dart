@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:firebase_auth/firebase_auth.dart';
+
 import 'app_theme.dart';
 import 'auth_service.dart';
+import 'guia_certificados_screen.dart';
 import 'home_screen.dart';
 import 'login_screen.dart';
 
@@ -491,17 +494,32 @@ class _RegistroScreenState extends State<RegistroScreen> {
 
     setState(() => _cargando = true);
     try {
-      await _authService.registrarUsuario(
+      final UserCredential credenciales = await _authService.registrarUsuario(
         _correoController.text.trim(),
         _passwordController.text,
         _rolSeleccionado,
       );
 
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
-      );
+
+      final bool esGuia = _rolSeleccionado == 'Guía turístico';
+      final String? uid = credenciales.user?.uid;
+
+      if (esGuia && uid != null) {
+        // El guía continúa con la subida de certificados (Pantalla 2).
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => GuiaCertificadosScreen(userId: uid),
+          ),
+        );
+      } else {
+        // El turista entra directo al Home.
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+        );
+      }
     } on AuthServiceException catch (error) {
       if (!mounted) return;
       setState(() {

@@ -36,11 +36,18 @@ class AuthService {
         );
       }
 
+      // Los guías turísticos quedan pendientes hasta subir sus certificados y
+      // completar el perfil laboral (Pantallas 2 y 3).
+      final bool esGuia = rol == 'Guía turístico';
+
       // El UID se usa como ID para mantener una relación directa con Auth.
       await _firestore.collection('usuarios').doc(usuario.uid).set({
         'uid': usuario.uid,
         'correo': correo.trim(),
         'rol': rol,
+        'estado': esGuia ? 'pendiente_aprobacion' : 'activo',
+        if (esGuia) 'perfilCompleto': false,
+        if (esGuia) 'estadoCertificados': 'pendiente',
         'fechaCreacion': Timestamp.now(),
       });
 
