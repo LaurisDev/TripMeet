@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -66,6 +68,7 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
             infoWindow: InfoWindow(
               title: lugar.nombre,
               snippet: lugar.ubicacion,
+              onTap: () => _abrirDetalle(lugar),
             ),
             onTap: () => _abrirDetalle(lugar),
           ),
@@ -111,10 +114,25 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
       );
       return;
     }
+    // Mientras se espera el fix preciso, usamos la última posición
+    // conocida (si existe) para centrar el mapa de inmediato.
+    try {
+      final ultima = await Geolocator.getLastKnownPosition();
+      if (ultima != null && mounted && _posicion == null) {
+        setState(() => _posicion = ultima);
+        await _moverCamara(
+          LatLng(ultima.latitude, ultima.longitude),
+          zoom: 15,
+        );
+      }
+    } catch (_) {
+      // Sin última posición conocida; seguimos con el fix en vivo.
+    }
     try {
       final posicion = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 12),
         ),
       );
       if (!mounted) return;
@@ -125,6 +143,10 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
       await _moverCamara(
         LatLng(posicion.latitude, posicion.longitude),
         zoom: 15,
+      );
+    } on TimeoutException {
+      _informarUbicacion(
+        'No se pudo obtener un GPS preciso a tiempo. Toca para reintentar.',
       );
     } catch (_) {
       _informarUbicacion(
@@ -202,8 +224,20 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
       );
       return;
     }
-    await _moverCamara(LatLng(lugar.latitud, lugar.longitud), zoom: 14);
-    if (mounted) _abrirDetalle(lugar);
+    await _moverCamara(LatLng(lugar.latitud, lugar.longitud), zoom: 16);
+    if (mounted) _mostrarMarcador(lugar);
+  }
+
+  /// Resalta el marcador del [lugar] seleccionado mostrando su InfoWindow,
+  /// para que el usuario lo toque y entre a la descripción cuando quiera.
+  void _mostrarMarcador(Lugar lugar) {
+    final destino = LatLng(lugar.latitud, lugar.longitud);
+    for (final marcador in _marcadores) {
+      if (marcador.position == destino) {
+        _mapa?.showMarkerInfoWindow(marcador.markerId);
+        break;
+      }
+    }
   }
 
   Future<void> _moverCamara(LatLng destino, {double zoom = 14}) async {
