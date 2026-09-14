@@ -14,7 +14,10 @@ class MapaExploracionScreen extends StatefulWidget {
 }
 
 class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
-  static const _colombia = CameraPosition(target: LatLng(4.5709, -74.2973), zoom: 5.5);
+  static const _colombia = CameraPosition(
+    target: LatLng(4.5709, -74.2973),
+    zoom: 5.5,
+  );
 
   final LugarService _servicio = LugarService();
   final TextEditingController _buscador = TextEditingController();
@@ -44,98 +47,159 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
   }
 
   Future<void> _cargarLugares() async {
-    setState(() { _cargando = true; _error = null; });
+    setState(() {
+      _cargando = true;
+      _error = null;
+    });
     try {
       final lugares = await _servicio.obtenerLugares();
       final marcadores = <Marker>{};
       for (var i = 0; i < lugares.length; i++) {
         final lugar = lugares[i];
-        if (!_coordenadasValidas(lugar.latitud, lugar.longitud)) continue;
-        marcadores.add(Marker(
-          markerId: MarkerId('lugar_$i'),
-          position: LatLng(lugar.latitud, lugar.longitud),
-          infoWindow: InfoWindow(title: lugar.nombre, snippet: lugar.ubicacion),
-          onTap: () => _abrirDetalle(lugar),
-        ));
+        if (!_coordenadasValidas(lugar.latitud, lugar.longitud)) {
+          continue;
+        }
+        marcadores.add(
+          Marker(
+            markerId: MarkerId('lugar_$i'),
+            position: LatLng(lugar.latitud, lugar.longitud),
+            infoWindow: InfoWindow(
+              title: lugar.nombre,
+              snippet: lugar.ubicacion,
+            ),
+            onTap: () => _abrirDetalle(lugar),
+          ),
+        );
       }
       if (!mounted) return;
-      setState(() { _marcadores = marcadores; _cargando = false; });
+      setState(() {
+        _marcadores = marcadores;
+        _cargando = false;
+      });
     } catch (_) {
       if (!mounted) return;
-      setState(() { _cargando = false; _error = 'No se pudieron cargar los lugares.'; });
+      setState(() {
+        _cargando = false;
+        _error = 'No se pudieron cargar los lugares.';
+      });
     }
   }
 
   Future<void> _cargarUbicacion() async {
-    setState(() { _ubicacionCargando = true; _mensajeUbicacion = null; });
+    setState(() {
+      _ubicacionCargando = true;
+      _mensajeUbicacion = null;
+    });
     if (!await Geolocator.isLocationServiceEnabled()) {
       _informarUbicacion('Activa el GPS para centrar el mapa en tu ubicación.');
       return;
     }
     var permiso = await Geolocator.checkPermission();
-    if (permiso == LocationPermission.denied) permiso = await Geolocator.requestPermission();
     if (permiso == LocationPermission.denied) {
-      _informarUbicacion('Permiso denegado. El mapa seguirá centrado en Colombia.');
+      permiso = await Geolocator.requestPermission();
+    }
+    if (permiso == LocationPermission.denied) {
+      _informarUbicacion(
+        'Permiso denegado. El mapa seguirá centrado en Colombia.',
+      );
       return;
     }
     if (permiso == LocationPermission.deniedForever) {
-      _informarUbicacion('La ubicación está bloqueada. Habilítala desde Ajustes.', ajustes: true);
+      _informarUbicacion(
+        'La ubicación está bloqueada. Habilítala desde Ajustes.',
+        ajustes: true,
+      );
       return;
     }
     try {
       final posicion = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
       );
       if (!mounted) return;
-      setState(() { _posicion = posicion; _ubicacionCargando = false; });
-      await _moverCamara(LatLng(posicion.latitude, posicion.longitude), zoom: 15);
+      setState(() {
+        _posicion = posicion;
+        _ubicacionCargando = false;
+      });
+      await _moverCamara(
+        LatLng(posicion.latitude, posicion.longitude),
+        zoom: 15,
+      );
     } catch (_) {
-      _informarUbicacion('No se pudo obtener tu ubicación. El mapa seguirá disponible.');
+      _informarUbicacion(
+        'No se pudo obtener tu ubicación. El mapa seguirá disponible.',
+      );
     }
   }
 
   void _informarUbicacion(String mensaje, {bool ajustes = false}) {
     if (!mounted) return;
-    setState(() { _ubicacionCargando = false; _mensajeUbicacion = mensaje; });
+    setState(() {
+      _ubicacionCargando = false;
+      _mensajeUbicacion = mensaje;
+    });
     if (ajustes) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(mensaje),
-        action: SnackBarAction(label: 'Ajustes', onPressed: Geolocator.openAppSettings),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(mensaje),
+          action: SnackBarAction(
+            label: 'Ajustes',
+            onPressed: Geolocator.openAppSettings,
+          ),
+        ),
+      );
     }
   }
 
   Future<void> _buscar(String texto) async {
     final consulta = texto.trim();
     if (consulta.isEmpty) {
-      setState(() { _resultados = []; _mostrarResultados = false; });
+      setState(() {
+        _resultados = [];
+        _mostrarResultados = false;
+      });
       return;
     }
-    setState(() { _buscando = true; _mostrarResultados = true; });
+    setState(() {
+      _buscando = true;
+      _mostrarResultados = true;
+    });
     try {
       final resultados = await _servicio.buscarLugares(consulta);
       if (!mounted) return;
-      setState(() { _resultados = resultados; _buscando = false; });
+      setState(() {
+        _resultados = resultados;
+        _buscando = false;
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _resultados = [];
         _buscando = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('No se pudo conectar con los lugares guardados.'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo conectar con los lugares guardados.'),
+        ),
+      );
     }
   }
 
   Future<void> _seleccionar(Lugar lugar) async {
     FocusManager.instance.primaryFocus?.unfocus();
     _buscador.text = lugar.nombre;
-    setState(() { _mostrarResultados = false; });
+    setState(() {
+      _mostrarResultados = false;
+    });
     if (!_coordenadasValidas(lugar.latitud, lugar.longitud)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Este lugar no tiene coordenadas válidas para el mapa.'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Este lugar no tiene coordenadas válidas para el mapa.',
+          ),
+        ),
+      );
       return;
     }
     await _moverCamara(LatLng(lugar.latitud, lugar.longitud), zoom: 14);
@@ -145,62 +209,84 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
   Future<void> _moverCamara(LatLng destino, {double zoom = 14}) async {
     final mapa = _mapa;
     if (mapa == null) return;
-    await mapa.animateCamera(CameraUpdate.newCameraPosition(
-      CameraPosition(target: destino, zoom: zoom),
-    ));
+    await mapa.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: destino, zoom: zoom),
+      ),
+    );
   }
 
   Future<void> _centrarUsuario() async {
-    if (_posicion == null) { await _cargarUbicacion(); return; }
-    await _moverCamara(LatLng(_posicion!.latitude, _posicion!.longitude), zoom: 15);
+    if (_posicion == null) {
+      await _cargarUbicacion();
+      return;
+    }
+    await _moverCamara(
+      LatLng(_posicion!.latitude, _posicion!.longitude),
+      zoom: 15,
+    );
   }
 
   bool _coordenadasValidas(double latitud, double longitud) =>
-      latitud.isFinite && longitud.isFinite &&
-      latitud >= -90 && latitud <= 90 &&
-      longitud >= -180 && longitud <= 180 &&
+      latitud.isFinite &&
+      longitud.isFinite &&
+      latitud >= -90 &&
+      latitud <= 90 &&
+      longitud >= -180 &&
+      longitud <= 180 &&
       (latitud != 0 || longitud != 0);
 
   void _abrirDetalle(Lugar lugar) {
-    Navigator.push(context, MaterialPageRoute<void>(
-      builder: (_) => DetalleLugarScreen(lugar: lugar),
-    ));
+    Navigator.push(
+      context,
+      MaterialPageRoute<void>(builder: (_) => DetalleLugarScreen(lugar: lugar)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.crema,
-      body: Stack(children: [
-        GoogleMap(
-          initialCameraPosition: _colombia,
-          markers: _marcadores,
-          myLocationEnabled: _posicion != null,
-          myLocationButtonEnabled: false,
-          compassEnabled: false,
-          mapToolbarEnabled: false,
-          onMapCreated: (controller) {
-            _mapa = controller;
-            final posicion = _posicion;
-            if (posicion != null) {
-              _moverCamara(LatLng(posicion.latitude, posicion.longitude), zoom: 15);
-            }
-          },
-        ),
-        SafeArea(child: Column(children: [
-          _barraBusqueda(),
-          const SizedBox(height: 10),
-          _filtros(),
-          if (_mensajeUbicacion != null) _avisoUbicacion(),
-          if (_mostrarResultados) _listaResultados(),
-          const Spacer(),
-          _botonUbicacion(),
-          _panelInferior(),
-        ])),
-        if (_cargando) _carga(),
-        if (_error != null) _avisoError(),
-        if (!_cargando && _error == null && _marcadores.isEmpty) _sinLugares(),
-      ]),
+      body: Stack(
+        children: [
+          GoogleMap(
+            initialCameraPosition: _colombia,
+            markers: _marcadores,
+            myLocationEnabled: _posicion != null,
+            myLocationButtonEnabled: false,
+            compassEnabled: false,
+            mapToolbarEnabled: false,
+            onMapCreated: (controller) {
+              _mapa = controller;
+              final posicion = _posicion;
+              if (posicion != null) {
+                _moverCamara(
+                  LatLng(posicion.latitude, posicion.longitude),
+                  zoom: 15,
+                );
+              }
+            },
+          ),
+          SafeArea(
+            child: Column(
+              children: [
+                _barraBusqueda(),
+                const SizedBox(height: 10),
+                _filtros(),
+                if (_mensajeUbicacion != null) _avisoUbicacion(),
+                if (_mostrarResultados) _listaResultados(),
+                const Spacer(),
+                _botonUbicacion(),
+                _panelInferior(),
+              ],
+            ),
+          ),
+          if (_cargando) _carga(),
+          if (_error != null) _avisoError(),
+          if (!_cargando && _error == null && _marcadores.isEmpty)
+            _sinLugares(),
+        ],
+      ),
     );
   }
 
@@ -248,23 +334,45 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
       boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
     ),
     child: _buscando
-        ? const Padding(padding: EdgeInsets.all(18), child: Center(child: CircularProgressIndicator()))
+        ? const Padding(
+            padding: EdgeInsets.all(18),
+            child: Center(child: CircularProgressIndicator()),
+          )
         : _resultados.isEmpty
-            ? const Padding(padding: EdgeInsets.all(18), child: Text('No se encontraron lugares guardados.'))
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: _resultados.length,
-                itemBuilder: (_, i) {
-                  final lugar = _resultados[i];
-                  return ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.place, color: AppTheme.verdeAzulado),
-                    title: Text(lugar.nombre),
-                    subtitle: Text(lugar.ubicacion),
-                    onTap: () => _seleccionar(lugar),
-                  );
-                },
-              ),
+        ? const Padding(
+            padding: EdgeInsets.all(18),
+            child: Text('No se encontraron lugares guardados.'),
+          )
+        : ListView.builder(
+            shrinkWrap: true,
+            itemCount: _resultados.length,
+            itemBuilder: (_, i) {
+              final lugar = _resultados[i];
+              return ListTile(
+                dense: true,
+                leading: const Icon(Icons.place, color: AppTheme.verdeAzulado),
+                title: Text(lugar.nombre),
+                subtitle: Text(lugar.ubicacion),
+                onTap: () => _seleccionar(lugar),
+                trailing: PopupMenuButton<String>(
+                  tooltip: 'Más opciones',
+                  onSelected: (opcion) {
+                    if (opcion == 'descripcion') _abrirDetalle(lugar);
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem<String>(
+                      value: 'descripcion',
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.description_outlined),
+                        title: Text('Ver descripción'),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
   );
 
   Widget _botonUbicacion() => Padding(
@@ -290,38 +398,72 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
       color: AppTheme.superficieClara,
       borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
     ),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Center(child: Container(width: 36, height: 4, color: AppTheme.crema)),
-      const SizedBox(height: 10),
-      Text('Cerca de ti', style: Theme.of(context).textTheme.titleLarge),
-      const SizedBox(height: 10),
-      const Row(children: [
-        Expanded(child: _LugarCercano('Explora lugares turísticos', Color(0xFF789286))),
-        SizedBox(width: 10),
-        Expanded(child: _LugarCercano('Descubre Medellín', Color(0xFFB99A78))),
-      ]),
-    ]),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Center(child: Container(width: 36, height: 4, color: AppTheme.crema)),
+        const SizedBox(height: 10),
+        Text('Cerca de ti', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 10),
+        const Row(
+          children: [
+            Expanded(
+              child: _LugarCercano(
+                'Explora lugares turísticos',
+                Color(0xFF789286),
+              ),
+            ),
+            SizedBox(width: 10),
+            Expanded(
+              child: _LugarCercano('Descubre Medellín', Color(0xFFB99A78)),
+            ),
+          ],
+        ),
+      ],
+    ),
   );
 
-  Widget _carga() => const Center(child: Card(child: Padding(
-    padding: EdgeInsets.all(16), child: CircularProgressIndicator(),
-  )));
+  Widget _carga() => const Center(
+    child: Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: CircularProgressIndicator(),
+      ),
+    ),
+  );
 
-  Widget _avisoError() => Center(child: Card(child: Padding(
-    padding: const EdgeInsets.all(16),
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Text(_error!),
-      const SizedBox(height: 8),
-      TextButton(onPressed: _cargarLugares, child: const Text('Reintentar')),
-    ]),
-  )));
+  Widget _avisoError() => Center(
+    child: Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_error!),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _cargarLugares,
+              child: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 
   Widget _sinLugares() => Positioned(
-    left: 18, right: 18, bottom: 210,
-    child: Card(child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Text('No hay lugares turísticos con coordenadas válidas.', textAlign: TextAlign.center),
-    )),
+    left: 18,
+    right: 18,
+    bottom: 210,
+    child: Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Text(
+          'No hay lugares turísticos con coordenadas válidas.',
+          textAlign: TextAlign.center,
+        ),
+      ),
+    ),
   );
 
   Widget _avisoUbicacion() => Padding(
@@ -331,11 +473,13 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
       borderRadius: BorderRadius.circular(12),
       child: Padding(
         padding: const EdgeInsets.all(10),
-        child: Row(children: [
-          const Icon(Icons.location_off, color: AppTheme.naranjaQuemado),
-          const SizedBox(width: 8),
-          Expanded(child: Text(_mensajeUbicacion!)),
-        ]),
+        child: Row(
+          children: [
+            const Icon(Icons.location_off, color: AppTheme.naranjaQuemado),
+            const SizedBox(width: 8),
+            Expanded(child: Text(_mensajeUbicacion!)),
+          ],
+        ),
       ),
     ),
   );
@@ -355,11 +499,14 @@ class _FiltroMapa extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 4)],
     ),
-    child: Text(texto, style: TextStyle(
-      color: destacado ? AppTheme.azulPetroleo : AppTheme.textoSuave,
-      fontSize: 12,
-      fontWeight: destacado ? FontWeight.w600 : FontWeight.w500,
-    )),
+    child: Text(
+      texto,
+      style: TextStyle(
+        color: destacado ? AppTheme.azulPetroleo : AppTheme.textoSuave,
+        fontSize: 12,
+        fontWeight: destacado ? FontWeight.w600 : FontWeight.w500,
+      ),
+    ),
   );
 }
 
@@ -373,8 +520,19 @@ class _LugarCercano extends StatelessWidget {
     height: 62,
     padding: const EdgeInsets.all(10),
     alignment: Alignment.bottomLeft,
-    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(9)),
-    child: Text(nombre, maxLines: 2, overflow: TextOverflow.ellipsis,
-      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(9),
+    ),
+    child: Text(
+      nombre,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.w600,
+        fontSize: 12,
+      ),
+    ),
   );
 }
