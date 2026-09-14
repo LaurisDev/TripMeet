@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'app_theme.dart';
 
@@ -6,7 +7,11 @@ import 'app_theme.dart';
 ///
 /// Más adelante aquí se mostrarán las publicaciones y planes de otros usuarios.
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.avisoRevision});
+
+  /// Mensaje mostrado en un banner superior cuando el usuario llega desde el
+  /// registro de guía y su perfil quedó en revisión.
+  final String? avisoRevision;
 
   @override
   Widget build(BuildContext context) {
@@ -20,6 +25,8 @@ class HomeScreen extends StatelessWidget {
         child: SingleChildScrollView(
           child: Column(
             children: <Widget>[
+              if (avisoRevision != null)
+                _BannerRevision(mensaje: avisoRevision!),
               // El mismo encabezado graduado conecta el placeholder con registro.
               Container(
                 width: double.infinity,
@@ -96,6 +103,41 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Banner informativo para el estado "perfil en revisión".
+class _BannerRevision extends StatelessWidget {
+  const _BannerRevision({required this.mensaje});
+
+  final String mensaje;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      color: AppTheme.crema,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Icon(Icons.hourglass_top_rounded,
+              size: 20, color: AppTheme.azulPetroleo),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              mensaje,
+              style: GoogleFonts.workSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.azulPetroleo,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
