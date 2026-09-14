@@ -106,6 +106,8 @@ class LugaresService {
   }
 }
 
+typedef LugarService = LugaresService;
+
 // HU-08: Modelo de Reseña
 class Resena {
   final String usuario;
