@@ -87,6 +87,7 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
       ),
       body: CustomScrollView(
         slivers: [
+          // CABECERA COLAPSABLE PREMIUM (Anderson)
           SliverAppBar(
             expandedHeight: 320,
             pinned: true,
@@ -125,6 +126,7 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Categoría
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
@@ -134,23 +136,60 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
                     child: Text(widget.lugar.categoria, style: TextStyle(color: AppTheme.azulPetroleo, fontWeight: FontWeight.bold, fontSize: 12)),
                   ),
                   const SizedBox(height: 16),
+                  
+                  // Nombre del Lugar
                   Text(widget.lugar.nombre, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Icon(Icons.location_on, color: AppTheme.verdeAzulado, size: 18),
-                      const SizedBox(width: 4),
-                      Text(widget.lugar.ubicacion, style: TextStyle(color: Colors.grey.shade600, fontSize: 16)),
-                    ],
+                  
+                  const SizedBox(height: 16),
+
+                  // Ubicación con Diseño de Juan (Integrado)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8F9FA),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppTheme.verdeAzulado.withOpacity(0.1)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppTheme.verdeAzulado.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.location_on, color: AppTheme.verdeAzulado, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Ubicación', style: TextStyle(color: AppTheme.azulPetroleo, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 3),
+                              Text(widget.lugar.ubicacion.isEmpty ? 'No disponible' : widget.lugar.ubicacion, 
+                                style: const TextStyle(color: Colors.black54)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+
                   const SizedBox(height: 32),
                   const Text('Sobre este lugar', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
-                  Text(tieneDescripcion ? widget.lugar.descripcion : 'Sin descripción.', style: const TextStyle(fontSize: 16, height: 1.5)),
+                  Text(tieneDescripcion ? widget.lugar.descripcion : 'Sin descripción.', 
+                    style: const TextStyle(fontSize: 16, height: 1.6, color: Colors.black87)),
+                  
                   const SizedBox(height: 32),
                   _seccionFotos(context, tieneFotos),
+                  
                   const SizedBox(height: 40),
                   
+                  // --- SECCIÓN DE RESEÑAS INNOVADORA (Anderson) ---
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -190,7 +229,7 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
-      builder: (context) => StatefulBuilder( // IMPORTANTE: Para que las estrellas cambien de color al tocarlas
+      builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => Padding(
           padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 24, right: 24, top: 24),
           child: Column(
