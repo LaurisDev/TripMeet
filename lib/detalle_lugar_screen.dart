@@ -48,20 +48,24 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
       return;
     }
 
+    final user = FirebaseAuth.instance.currentUser;
+    final String nombreUsuario = user?.email?.split('@')[0] ?? 'Viajero';
+
     try {
       await FirebaseFirestore.instance
           .collection('Lugares')
           .doc(widget.lugar.id)
           .collection('Resenas')
           .add({
-        'usuario': 'Viajero', 
+        'usuario': nombreUsuario, 
         'comentario': _comentarioController.text.trim(),
         'calificacion': _estrellasSeleccionadas,
         'fecha': FieldValue.serverTimestamp(),
       });
 
+      if (!mounted) return;
       _comentarioController.clear();
-      if (mounted) Navigator.pop(context);
+      Navigator.pop(context);
       _cargarResenas(); 
     } catch (e) {
       if (mounted) {
