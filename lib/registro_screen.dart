@@ -56,7 +56,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // --- IMAGEN DE FONDO (SUTIL Y ELEGANTE) ---
+          // --- IMAGEN DE FONDO (IGUAL A LOGIN) ---
           Positioned.fill(
             child: Image.asset(
               'assets/images/atardecer_playa.jpg.jpg',
@@ -64,7 +64,7 @@ class _RegistroScreenState extends State<RegistroScreen> {
               alignment: const Alignment(0.0, 0.3),
             ),
           ),
-          // --- OVERLAY PARA DAR PROFUNDIDAD ---
+          // --- OVERLAY PARA DAR PROFUNDIDAD (Sincronizado con Login) ---
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
@@ -72,11 +72,9 @@ class _RegistroScreenState extends State<RegistroScreen> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withOpacity(0.1),
-                    Colors.black.withOpacity(0.3),
-                    AppTheme.crema.withOpacity(0.85),
+                    Colors.black.withValues(alpha: 0.2),
+                    AppTheme.crema.withValues(alpha: 0.9),
                   ],
-                  stops: const [0.0, 0.4, 0.9],
                 ),
               ),
             ),
@@ -86,18 +84,18 @@ class _RegistroScreenState extends State<RegistroScreen> {
               child: Column(
                 children: [
                   // Espacio para que la imagen se vea
-                  SizedBox(height: altoPantalla * 0.15),
+                  SizedBox(height: altoPantalla * 0.1),
                   // --- TARJETA PRINCIPAL ---
                   Padding(
                     padding: EdgeInsets.symmetric(
                       horizontal: paddingHorizontal,
                     ),
                     child: Card(
-                      color: Colors.white.withOpacity(0.92),
+                      color: Colors.white.withValues(alpha: 0.95),
                       elevation: 12,
-                      shadowColor: Colors.black.withOpacity(0.15),
+                      shadowColor: Colors.black.withValues(alpha: 0.15),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(30),
                       ),
                       child: Padding(
                         padding: EdgeInsets.all(esPantallaPequena ? 20 : 28),
@@ -108,60 +106,33 @@ class _RegistroScreenState extends State<RegistroScreen> {
                             children: [
                               // --- HEADER ---
                               Text(
-                                'Únete a la comunidad global',
-                                style: GoogleFonts.workSans(
-                                  fontSize: esPantallaPequena ? 22 : 24,
-                                  fontWeight: FontWeight.w600,
+                                'Únete a TripMeet',
+                                style: GoogleFonts.fraunces(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
                                   color: AppTheme.azulPetroleo,
-                                  height: 1.2,
-                                  letterSpacing: -0.2,
                                 ),
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 'Planifica juntos, viaja más lejos.',
                                 style: GoogleFonts.workSans(
-                                  fontSize: esPantallaPequena ? 14 : 16,
-                                  color: AppTheme.textoSuave,
-                                  height: 1.4,
+                                  fontSize: 16,
+                                  color: Colors.grey.shade600,
                                 ),
                               ),
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 32),
 
                               // --- CAMPO CORREO ---
                               TextFormField(
                                 controller: _correoController,
                                 enabled: !_cargando,
-                                keyboardType: TextInputType.emailAddress,
-                                textInputAction: TextInputAction.next,
                                 decoration: InputDecoration(
                                   labelText: 'Correo electrónico',
-                                  hintText: 'correo@viaje.com',
                                   prefixIcon: const Icon(Icons.email_outlined),
                                   errorText: _errorCorreo,
-                                  filled: true,
-                                  fillColor: Colors.white,
                                   border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide.none,
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(
-                                      color: Colors.grey.shade200,
-                                      width: 1,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(
-                                      color: AppTheme.verdeAzulado,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 14,
+                                    borderRadius: BorderRadius.circular(15),
                                   ),
                                 ),
                                 validator: (String? valor) {
@@ -175,25 +146,22 @@ class _RegistroScreenState extends State<RegistroScreen> {
                                   return null;
                                 },
                               ),
-                              const SizedBox(height: 14),
+                              const SizedBox(height: 16),
 
                               // --- CAMPO CONTRASEÑA ---
                               TextFormField(
                                 controller: _passwordController,
                                 enabled: !_cargando,
                                 obscureText: _obscurePassword,
-                                textInputAction: TextInputAction.next,
                                 decoration: InputDecoration(
                                   labelText: 'Contraseña',
-                                  hintText: 'Crea una contraseña segura',
                                   prefixIcon: const Icon(Icons.lock_outline),
                                   suffixIcon: IconButton(
                                     icon: Icon(
                                       _obscurePassword
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
+                                          ? Icons.visibility_off
+                                          : Icons.visibility,
                                       color: Colors.grey.shade600,
-                                      size: 20,
                                     ),
                                     onPressed: () {
                                       setState(() {
@@ -201,54 +169,28 @@ class _RegistroScreenState extends State<RegistroScreen> {
                                       });
                                     },
                                   ),
-                                  filled: true,
-                                  fillColor: Colors.white,
                                   border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide.none,
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(
-                                      color: Colors.grey.shade200,
-                                      width: 1,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(
-                                      color: AppTheme.verdeAzulado,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 14,
+                                    borderRadius: BorderRadius.circular(15),
                                   ),
                                 ),
                                 validator: _validarPassword,
                               ),
-                              const SizedBox(height: 14),
+                              const SizedBox(height: 16),
 
                               // --- CAMPO CONFIRMAR CONTRASEÑA ---
                               TextFormField(
                                 controller: _confirmarPasswordController,
                                 enabled: !_cargando,
                                 obscureText: _obscureConfirmPassword,
-                                textInputAction: TextInputAction.next,
                                 decoration: InputDecoration(
                                   labelText: 'Confirmar contraseña',
-                                  hintText: 'Confirma tu contraseña',
-                                  prefixIcon: const Icon(
-                                    Icons.lock_reset_outlined,
-                                  ),
+                                  prefixIcon: const Icon(Icons.lock_reset_outlined),
                                   suffixIcon: IconButton(
                                     icon: Icon(
                                       _obscureConfirmPassword
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
+                                          ? Icons.visibility_off
+                                          : Icons.visibility,
                                       color: Colors.grey.shade600,
-                                      size: 20,
                                     ),
                                     onPressed: () {
                                       setState(() {
@@ -257,29 +199,8 @@ class _RegistroScreenState extends State<RegistroScreen> {
                                       });
                                     },
                                   ),
-                                  filled: true,
-                                  fillColor: Colors.white,
                                   border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide.none,
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(
-                                      color: Colors.grey.shade200,
-                                      width: 1,
-                                    ),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: BorderSide(
-                                      color: AppTheme.verdeAzulado,
-                                      width: 2,
-                                    ),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 14,
+                                    borderRadius: BorderRadius.circular(15),
                                   ),
                                 ),
                                 validator: (String? valor) {
@@ -292,18 +213,18 @@ class _RegistroScreenState extends State<RegistroScreen> {
                                   return null;
                                 },
                               ),
-                              const SizedBox(height: 18),
+                              const SizedBox(height: 24),
 
                               // --- SELECTOR DE ROL ---
                               Text(
-                                'Rol',
+                                'Tu rol de viajero',
                                 style: GoogleFonts.workSans(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                   color: AppTheme.azulPetroleo,
                                 ),
                               ),
-                              const SizedBox(height: 10),
+                              const SizedBox(height: 12),
                               Row(
                                 children: [
                                   Expanded(
@@ -321,84 +242,53 @@ class _RegistroScreenState extends State<RegistroScreen> {
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _rolSeleccionado == _rolesDisponibles[0]
-                                    ? 'Cuéntanos cuál es tu enfoque de viaje.'
-                                    : 'Comparte tu experiencia y conecta viajeros.',
-                                style: GoogleFonts.workSans(
-                                  fontSize: 12,
-                                  color: AppTheme.textoSuave.withOpacity(0.7),
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
-                              const SizedBox(height: 28),
+                              const SizedBox(height: 32),
 
                               // --- BOTÓN CREAR CUENTA ---
                               SizedBox(
                                 width: double.infinity,
-                                height: 52,
-                                child: FilledButton(
+                                height: 55,
+                                child: ElevatedButton(
                                   onPressed: _cargando ? null : _registrar,
-                                  style: FilledButton.styleFrom(
-                                    backgroundColor: AppTheme.naranjaQuemado,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.azulPetroleo, // IGUAL A LOGIN
                                     foregroundColor: Colors.white,
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(15),
                                     ),
-                                    elevation: 2,
                                   ),
                                   child: _cargando
-                                      ? const SizedBox(
-                                          width: 24,
-                                          height: 24,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2.5,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : Text(
-                                          'Crear cuenta y explorar',
-                                          style: GoogleFonts.workSans(
+                                      ? const CircularProgressIndicator(color: Colors.white)
+                                      : const Text(
+                                          'Registrarse',
+                                          style: TextStyle(
                                             fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                            letterSpacing: 0.5,
+                                            fontWeight: FontWeight.bold,
                                           ),
                                         ),
                                 ),
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 20),
 
                               // --- ENLACE A LOGIN ---
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    '¿Ya tienes cuenta?',
-                                    style: GoogleFonts.workSans(
-                                      color: AppTheme.textoSuave,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  GestureDetector(
-                                    onTap: () {
-                                      Navigator.pushReplacement(
-                                        context,
-                                        MaterialPageRoute<void>(
-                                          builder: (_) => const LoginScreen(),
-                                        ),
-                                      );
-                                    },
-                                    child: Text(
-                                      ' Iniciar sesión',
-                                      style: GoogleFonts.workSans(
-                                        color: AppTheme.verdeAzulado,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
+                              Center(
+                                child: TextButton(
+                                  onPressed: () {
+                                    Navigator.pushReplacement(
+                                      context,
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => const LoginScreen(),
                                       ),
+                                    );
+                                  },
+                                  child: Text(
+                                    '¿Ya tienes cuenta? Inicia sesión',
+                                    style: TextStyle(
+                                      color: AppTheme.verdeAzulado,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                ],
+                                ),
                               ),
                             ],
                           ),
@@ -422,25 +312,14 @@ class _RegistroScreenState extends State<RegistroScreen> {
       onTap: _cargando ? null : () => setState(() => _rolSeleccionado = rol),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: seleccionado ? AppTheme.naranjaQuemado : Colors.white,
-          borderRadius: BorderRadius.circular(30),
+          color: seleccionado ? AppTheme.azulPetroleo : Colors.white,
+          borderRadius: BorderRadius.circular(15),
           border: Border.all(
-            color: seleccionado
-                ? AppTheme.naranjaQuemado
-                : Colors.grey.shade300,
+            color: seleccionado ? AppTheme.azulPetroleo : Colors.grey.shade300,
             width: 1.5,
           ),
-          boxShadow: seleccionado
-              ? [
-                  BoxShadow(
-                    color: AppTheme.naranjaQuemado.withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ]
-              : null,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -451,15 +330,12 @@ class _RegistroScreenState extends State<RegistroScreen> {
               color: seleccionado ? Colors.white : AppTheme.azulPetroleo,
             ),
             const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                rol,
-                style: GoogleFonts.workSans(
-                  fontSize: 14,
-                  fontWeight: seleccionado ? FontWeight.w600 : FontWeight.w500,
-                  color: seleccionado ? Colors.white : AppTheme.azulPetroleo,
-                ),
-                overflow: TextOverflow.ellipsis,
+            Text(
+              rol,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: seleccionado ? FontWeight.bold : FontWeight.w500,
+                color: seleccionado ? Colors.white : AppTheme.azulPetroleo,
               ),
             ),
           ],
@@ -469,29 +345,13 @@ class _RegistroScreenState extends State<RegistroScreen> {
   }
 
   String? _validarPassword(String? valor) {
-    if (valor == null || valor.isEmpty) {
-      return 'Ingresa una contraseña';
-    }
-    if (valor.length < 6) {
-      return 'Mínimo 6 caracteres';
-    }
-    if (!RegExp(r'[A-Z]').hasMatch(valor)) {
-      return 'Incluye al menos una mayúscula';
-    }
-    if (!RegExp(r'[^A-Za-z0-9]').hasMatch(valor)) {
-      return 'Incluye al menos un carácter especial';
-    }
+    if (valor == null || valor.isEmpty) return 'Ingresa una contraseña';
+    if (valor.length < 6) return 'Mínimo 6 caracteres';
     return null;
   }
 
   Future<void> _registrar() async {
-    FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _errorCorreo = null);
-
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
+    if (!_formKey.currentState!.validate()) return;
     setState(() => _cargando = true);
     try {
       final UserCredential credenciales = await _authService.registrarUsuario(
@@ -499,49 +359,18 @@ class _RegistroScreenState extends State<RegistroScreen> {
         _passwordController.text,
         _rolSeleccionado,
       );
-
       if (!mounted) return;
-
       final bool esGuia = _rolSeleccionado == 'Guía turístico';
       final String? uid = credenciales.user?.uid;
-
       if (esGuia && uid != null) {
-        // El guía continúa con la subida de certificados (Pantalla 2).
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute<void>(
-            builder: (_) => GuiaCertificadosScreen(userId: uid),
-          ),
-        );
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => GuiaCertificadosScreen(userId: uid)));
       } else {
-        // El turista entra directo al Home.
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
-        );
+        Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen(forzarIndiceMapa: true)));
       }
-    } on AuthServiceException catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _cargando = false;
-        if (error.code == 'email-already-in-use') {
-          _errorCorreo = error.message;
-        }
-      });
-      if (error.code != 'email-already-in-use') {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error.message)));
-      }
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() => _cargando = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No se pudo completar el registro. Inténtalo de nuevo.',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 }

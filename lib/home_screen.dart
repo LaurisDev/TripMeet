@@ -8,17 +8,18 @@ import 'lugares_service.dart';
 import 'detalle_lugar_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.rol, this.avisoRevision});
+  const HomeScreen({super.key, this.rol, this.avisoRevision, this.forzarIndiceMapa = false});
 
   final String? rol;
   final String? avisoRevision;
+  final bool forzarIndiceMapa; // Nuevo parámetro para el cambio de Juliana
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _indiceActual = 0;
+  late int _indiceActual;
   final RecomendacionesService _recomendacionesService = RecomendacionesService();
   List<Lugar> _recomendados = [];
   bool _cargandoRecomendados = true;
@@ -26,6 +27,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    // Si forzarIndiceMapa es true, empezamos en el índice 2 (Mapa)
+    _indiceActual = widget.forzarIndiceMapa ? 2 : 0;
     _cargarRecomendaciones();
   }
 
@@ -102,7 +105,6 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // BARRA DE BÚSQUEDA MINIMALISTA (Como en la foto)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               child: GestureDetector(
@@ -124,45 +126,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-
             if (widget.avisoRevision != null) _buildAvisoAlerta(widget.avisoRevision!),
-
-            // RECOMENDADOS (Sección Anderson)
             const Padding(
               padding: EdgeInsets.fromLTRB(24, 30, 24, 15),
-              child: Text('Recomendados para ti ✨', 
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppTheme.azulPetroleo)),
+              child: Text('Recomendados para ti ✨', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppTheme.azulPetroleo)),
             ),
             _buildCarouselRecomendados(),
-
-            // SECCIÓN "CERCA DE TI" (Estilo Minimalista Foto 1)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(24, 40, 24, 15),
-              child: Text('Cerca de ti', 
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.azulPetroleo)),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _buildTarjetaColor(
-                      'Explora lugares turísticos', 
-                      AppTheme.verdeSuave, 
-                      () => setState(() => _indiceActual = 1)
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildTarjetaColor(
-                      'Descubre Medellín', 
-                      AppTheme.arena, 
-                      () => setState(() => _indiceActual = 2)
-                    ),
-                  ),
-                ],
-              ),
-            ),
             const SizedBox(height: 40),
           ],
         ),
@@ -171,9 +140,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildCarouselRecomendados() {
-    if (_cargandoRecomendados) {
-      return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
-    }
+    if (_cargandoRecomendados) return const SizedBox(height: 200, child: Center(child: CircularProgressIndicator()));
     return SizedBox(
       height: 260,
       child: ListView.builder(
@@ -188,39 +155,14 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Container(
               width: 220,
               margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(30),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 8))],
-              ),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(30), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 8))]),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(30),
-                      child: Image.network(
-                        lugar.fotos.isNotEmpty ? lugar.fotos[0] : 'https://images.unsplash.com/photo-1506744038136-46273834b3fb',
-                        width: double.infinity, fit: BoxFit.cover,
-                      ),
-                    ),
-                  ),
+                  Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(30), child: Image.network(lugar.fotos.isNotEmpty ? lugar.fotos[0] : 'https://images.unsplash.com/photo-1506744038136-46273834b3fb', width: double.infinity, fit: BoxFit.cover))),
                   Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(lugar.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), maxLines: 1),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
-                            const SizedBox(width: 4),
-                            Text(lugar.categoria, style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500)),
-                          ],
-                        ),
-                      ],
-                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(lugar.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), maxLines: 1), const SizedBox(height: 4), Row(children: [const Icon(Icons.star_rounded, color: Colors.amber, size: 16), const SizedBox(width: 4), Text(lugar.categoria, style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500))])]),
                   ),
                 ],
               ),
@@ -231,38 +173,5 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTarjetaColor(String texto, Color color, VoidCallback accion) {
-    return GestureDetector(
-      onTap: accion,
-      child: Container(
-        height: 100,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        alignment: Alignment.bottomLeft,
-        child: Text(
-          texto, 
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-          maxLines: 2,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAvisoAlerta(String texto) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.amber.shade100)),
-      child: Row(
-        children: [
-          const Icon(Icons.info_outline_rounded, color: Colors.amber),
-          const SizedBox(width: 10),
-          Expanded(child: Text(texto, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500))),
-        ],
-      ),
-    );
-  }
+  Widget _buildAvisoAlerta(String texto) => Container(margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10), padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.amber.shade100)), child: Row(children: [const Icon(Icons.info_outline_rounded, color: Colors.amber), const SizedBox(width: 10), Expanded(child: Text(texto, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)))]));
 }
