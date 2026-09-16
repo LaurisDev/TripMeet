@@ -34,6 +34,17 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
   String? _error;
   String? _mensajeUbicacion;
 
+  // Anderson: Integración de categorías en el mapa
+  String _categoriaSeleccionada = 'Todos';
+  final Map<String, IconData> _categoriasMap = {
+    'Todos': Icons.grid_view_rounded,
+    'Playa': Icons.beach_access_rounded,
+    'Montaña': Icons.terrain_rounded,
+    'Ciudad': Icons.location_city_rounded,
+    'Aventura': Icons.explore_rounded,
+    'Cultura': Icons.museum_rounded,
+  };
+
   @override
   void initState() {
     super.initState();
@@ -54,7 +65,8 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
       _error = null;
     });
     try {
-      final lugares = await _servicio.obtenerLugares();
+      // Anderson: Ahora filtramos por categoría también en el mapa
+      final lugares = await _servicio.buscarLugares("", categoria: _categoriaSeleccionada);
       final marcadores = <Marker>{};
       for (var i = 0; i < lugares.length; i++) {
         final lugar = lugares[i];
@@ -347,15 +359,49 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
   );
 
   Widget _filtros() => SizedBox(
-    height: 36,
+    height: 45,
     child: ListView(
       padding: const EdgeInsets.symmetric(horizontal: 18),
       scrollDirection: Axis.horizontal,
-      children: const [
-        _FiltroMapa('Medellín y alrededores', true),
-        _FiltroMapa('Restaurantes'),
-        _FiltroMapa('Guías'),
-      ],
+      children: _categoriasMap.entries.map((entry) {
+        final bool seleccionado = _categoriaSeleccionada == entry.key;
+        return GestureDetector(
+          onTap: () {
+            setState(() {
+              _categoriaSeleccionada = entry.key;
+            });
+            _cargarLugares(); // Recargar marcadores según categoría
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            margin: const EdgeInsets.only(right: 10, bottom: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: seleccionado ? AppTheme.azulPetroleo : AppTheme.superficieClara,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  entry.value, 
+                  size: 18, 
+                  color: seleccionado ? Colors.white : AppTheme.azulPetroleo
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  entry.key,
+                  style: TextStyle(
+                    color: seleccionado ? Colors.white : AppTheme.azulPetroleo,
+                    fontSize: 13,
+                    fontWeight: seleccionado ? FontWeight.bold : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
     ),
   );
 
