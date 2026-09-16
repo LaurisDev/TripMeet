@@ -10,7 +10,7 @@ plugins {
 android {
     namespace = "com.example.tripmeet"
     compileSdk = flutter.compileSdkVersion
-    // ndkVersion = flutter.ndkVersion // Comentado temporalmente para evitar error de descarga
+    ndkVersion = flutter.ndkVersion
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

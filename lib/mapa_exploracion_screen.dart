@@ -1,9 +1,7 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-
 import 'app_theme.dart';
 import 'detalle_lugar_screen.dart';
 import 'lugares_service.dart';
@@ -16,11 +14,7 @@ class MapaExploracionScreen extends StatefulWidget {
 }
 
 class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
-  static const _colombia = CameraPosition(
-    target: LatLng(4.5709, -74.2973),
-    zoom: 5.5,
-  );
-
+  static const _colombia = CameraPosition(target: LatLng(4.5709, -74.2973), zoom: 5.5);
   final LugaresService _servicio = LugaresService();
   final TextEditingController _buscador = TextEditingController();
   GoogleMapController? _mapa;
@@ -30,11 +24,7 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
   bool _cargando = true;
   bool _buscando = false;
   bool _mostrarResultados = false;
-  bool _ubicacionCargando = true;
-  String? _error;
-  String? _mensajeUbicacion;
-
-  // Anderson: Integración de categorías innovadoras en el mapa
+  
   String _categoriaSeleccionada = 'Todos';
   final Map<String, IconData> _categoriasMap = {
     'Todos': Icons.grid_view_rounded,
@@ -52,140 +42,37 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
     _cargarUbicacion();
   }
 
-  @override
-  void dispose() {
-    _buscador.dispose();
-    _mapa?.dispose();
-    super.dispose();
-  }
-
   Future<void> _cargarLugares() async {
-    setState(() {
-      _cargando = true;
-      _error = null;
-    });
     try {
-      // Filtrar marcadores por la categoría seleccionada
       final lugares = await _servicio.buscarLugares("", categoria: _categoriaSeleccionada);
       final marcadores = <Marker>{};
-      for (var i = 0; i < lugares.length; i++) {
-        final lugar = lugares[i];
-        if (!_coordenadasValidas(lugar.latitud, lugar.longitud)) {
-          continue;
-        }
+      for (var lugar in lugares) {
         marcadores.add(
           Marker(
-            markerId: MarkerId('lugar_${lugar.id}'),
+            markerId: MarkerId(lugar.id),
             position: LatLng(lugar.latitud, lugar.longitud),
-            infoWindow: InfoWindow(
-              title: lugar.nombre,
-              snippet: lugar.ubicacion,
-              onTap: () => _abrirDetalle(lugar),
-            ),
+            infoWindow: InfoWindow(title: lugar.nombre, snippet: lugar.ubicacion),
             onTap: () => _abrirDetalle(lugar),
           ),
         );
       }
-      if (!mounted) return;
-      setState(() {
-        _marcadores = marcadores;
-        _cargando = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _cargando = false;
-        _error = 'No se pudieron cargar los lugares.';
-      });
-    }
+      if (mounted) setState(() { _marcadores = marcadores; _cargando = false; });
+    } catch (_) {}
   }
 
   Future<void> _cargarUbicacion() async {
-    setState(() {
-      _ubicacionCargando = true;
-      _mensajeUbicacion = null;
-    });
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      _informarUbicacion('Activa el GPS para centrar el mapa en tu ubicación.');
-      return;
-    }
-    var permiso = await Geolocator.checkPermission();
-    if (permiso == LocationPermission.denied) {
-      permiso = await Geolocator.requestPermission();
-    }
-    if (permiso == LocationPermission.denied) {
-      _informarUbicacion('Permiso denegado.');
-      return;
-    }
     try {
-      final posicion = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
-      if (!mounted) return;
-      setState(() {
-        _posicion = posicion;
-        _ubicacionCargando = false;
-      });
-      await _moverCamara(LatLng(posicion.latitude, posicion.longitude), zoom: 15);
-    } catch (_) {
-      _informarUbicacion('No se pudo obtener tu ubicación.');
-    }
+      var permiso = await Geolocator.checkPermission();
+      if (permiso == LocationPermission.denied) permiso = await Geolocator.requestPermission();
+      final posicion = await Geolocator.getCurrentPosition();
+      if (mounted) setState(() => _posicion = posicion);
+      _moverCamara(LatLng(posicion.latitude, posicion.longitude));
+    } catch (_) {}
   }
 
-  void _informarUbicacion(String mensaje) {
-    if (!mounted) return;
-    setState(() {
-      _ubicacionCargando = false;
-      _mensajeUbicacion = mensaje;
-    });
+  void _moverCamara(LatLng destino) {
+    _mapa?.animateCamera(CameraUpdate.newCameraPosition(CameraPosition(target: destino, zoom: 15)));
   }
-
-  Future<void> _buscar(String texto) async {
-    final consulta = texto.trim();
-    if (consulta.isEmpty) {
-      setState(() {
-        _resultados = [];
-        _mostrarResultados = false;
-      });
-      return;
-    }
-    setState(() {
-      _buscando = true;
-      _mostrarResultados = true;
-    });
-    try {
-      // Búsqueda inteligente combinando texto y categoría actual
-      final resultados = await _servicio.buscarLugares(consulta, categoria: _categoriaSeleccionada);
-      if (!mounted) return;
-      setState(() {
-        _resultados = resultados;
-        _buscando = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _resultados = [];
-        _buscando = false;
-      });
-    }
-  }
-
-  Future<void> _seleccionar(Lugar lugar) async {
-    FocusManager.instance.primaryFocus?.unfocus();
-    _buscador.text = lugar.nombre;
-    setState(() => _mostrarResultados = false);
-    await _moverCamara(LatLng(lugar.latitud, lugar.longitud), zoom: 16);
-    _mapa?.showMarkerInfoWindow(MarkerId('lugar_${lugar.id}'));
-  }
-
-  Future<void> _moverCamara(LatLng destino, {double zoom = 14}) async {
-    final mapa = _mapa;
-    if (mapa == null) return;
-    await mapa.animateCamera(CameraUpdate.newCameraPosition(CameraPosition(target: destino, zoom: zoom)));
-  }
-
-  bool _coordenadasValidas(double latitud, double longitud) =>
-      latitud != 0 || longitud != 0;
 
   void _abrirDetalle(Lugar lugar) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => DetalleLugarScreen(lugar: lugar)));
@@ -199,101 +86,109 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
           GoogleMap(
             initialCameraPosition: _colombia,
             markers: _marcadores,
-            myLocationEnabled: _posicion != null,
+            myLocationEnabled: true,
             myLocationButtonEnabled: false,
             onMapCreated: (controller) => _mapa = controller,
+            style: _mapStyle, // Estilo de mapa más limpio
           ),
+          
           SafeArea(
             child: Column(
               children: [
-                _barraBusqueda(),
+                _barraBusquedaMinimalista(),
                 const SizedBox(height: 12),
-                _filtrosCategorias(),
-                if (_mostrarResultados) _listaResultados(),
+                _filtrosCapsulas(),
               ],
             ),
           ),
-          if (_cargando) const Center(child: CircularProgressIndicator()),
-          Positioned(bottom: 30, right: 20, child: _botonCentrar()),
+          
+          Positioned(
+            bottom: 30,
+            right: 20,
+            child: FloatingActionButton(
+              backgroundColor: Colors.white,
+              foregroundColor: AppTheme.azulPetroleo,
+              elevation: 4,
+              onPressed: _cargarUbicacion,
+              child: const Icon(Icons.my_location_rounded),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _barraBusqueda() => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    child: Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)],
-      ),
-      child: TextField(
-        controller: _buscador,
-        onChanged: _buscar,
-        decoration: InputDecoration(
-          hintText: '¿Qué quieres explorar?',
-          prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.verdeAzulado),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 15),
+  Widget _barraBusquedaMinimalista() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 15, offset: const Offset(0, 5))],
+        ),
+        child: TextField(
+          controller: _buscador,
+          decoration: InputDecoration(
+            hintText: '¿Qué quieres explorar?',
+            hintStyle: TextStyle(color: Colors.grey.shade400),
+            prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.azulPetroleo),
+            suffixIcon: const Icon(Icons.person_outline, color: AppTheme.azulPetroleo),
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(vertical: 15),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
-  Widget _filtrosCategorias() => SizedBox(
-    height: 50,
-    child: ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      scrollDirection: Axis.horizontal,
-      children: _categoriasMap.entries.map((entry) {
-        final bool seleccionado = _categoriaSeleccionada == entry.key;
-        return GestureDetector(
-          onTap: () {
-            setState(() => _categoriaSeleccionada = entry.key);
-            _cargarLugares(); // Filtra marcadores en tiempo real
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            margin: const EdgeInsets.only(right: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            decoration: BoxDecoration(
-              color: seleccionado ? AppTheme.azulPetroleo : Colors.white,
-              borderRadius: BorderRadius.circular(25),
-              boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 5)],
+  Widget _filtrosCapsulas() {
+    return SizedBox(
+      height: 45,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 15),
+        children: _categoriasMap.entries.map((entry) {
+          final bool seleccionado = _categoriaSeleccionada == entry.key;
+          return GestureDetector(
+            onTap: () {
+              setState(() => _categoriaSeleccionada = entry.key);
+              _cargarLugares();
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              margin: const EdgeInsets.only(right: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              decoration: BoxDecoration(
+                color: seleccionado ? AppTheme.azulPetroleo : Colors.white.withValues(alpha: 0.9),
+                borderRadius: BorderRadius.circular(25),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8)],
+              ),
+              child: Row(
+                children: [
+                  Icon(entry.value, size: 18, color: seleccionado ? Colors.white : AppTheme.azulPetroleo),
+                  const SizedBox(width: 8),
+                  Text(entry.key, style: TextStyle(
+                    color: seleccionado ? Colors.white : AppTheme.azulPetroleo, 
+                    fontWeight: seleccionado ? FontWeight.bold : FontWeight.w500,
+                    fontSize: 13,
+                  )),
+                ],
+              ),
             ),
-            child: Row(
-              children: [
-                Icon(entry.value, size: 20, color: seleccionado ? Colors.white : AppTheme.azulPetroleo),
-                const SizedBox(width: 8),
-                Text(entry.key, style: TextStyle(color: seleccionado ? Colors.white : AppTheme.azulPetroleo, fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
-    ),
-  );
-
-  Widget _listaResultados() => Container(
-    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    constraints: const BoxConstraints(maxHeight: 250),
-    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)]),
-    child: ListView.builder(
-      shrinkWrap: true,
-      itemCount: _resultados.length,
-      itemBuilder: (_, i) => ListTile(
-        leading: const Icon(Icons.place, color: AppTheme.verdeAzulado),
-        title: Text(_resultados[i].nombre),
-        onTap: () => _seleccionar(_resultados[i]),
+          );
+        }).toList(),
       ),
-    ),
-  );
+    );
+  }
 
-  Widget _botonCentrar() => FloatingActionButton(
-    backgroundColor: Colors.white,
-    foregroundColor: AppTheme.azulPetroleo,
-    onPressed: _cargarUbicacion,
-    child: const Icon(Icons.my_location),
-  );
+  final String _mapStyle = '''
+[
+  {
+    "featureType": "poi",
+    "elementType": "labels",
+    "stylers": [ { "visibility": "off" } ]
+  }
+]
+''';
 }
