@@ -47,7 +47,8 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
   Future<void> _cargarLugares() async {
     setState(() => _cargando = true);
     try {
-      final lugares = await _servicio.buscarLugares("", categoria: _categoriaSeleccionada);
+      // Ahora incluimos el texto del buscador para que Felipe pueda buscar nombres
+      final lugares = await _servicio.buscarLugares(_buscador.text, categoria: _categoriaSeleccionada);
       final marcadores = <Marker>{};
       for (var lugar in lugares) {
         marcadores.add(
@@ -121,12 +122,20 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
       borderRadius: BorderRadius.circular(28),
       child: TextField(
         controller: _buscador,
-        decoration: const InputDecoration(
+        onSubmitted: (_) => _cargarLugares(), // Acción al presionar Enter
+        onChanged: (value) {
+           // Si borra todo, recargamos automáticamente
+           if (value.isEmpty) _cargarLugares();
+        },
+        decoration: InputDecoration(
           hintText: '¿Qué quieres explorar?',
-          prefixIcon: Icon(Icons.search),
-          suffixIcon: Icon(Icons.person_outline),
+          prefixIcon: IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: _cargarLugares, // Botón de lupa funcional
+          ),
+          suffixIcon: const Icon(Icons.person_outline),
           border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(vertical: 14),
         ),
       ),
     ),
