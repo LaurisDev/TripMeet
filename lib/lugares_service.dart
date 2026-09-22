@@ -58,22 +58,17 @@ class LugaresService {
     return lugares;
   }
 
-  // HU-08: Leer reseñas desde la SUBCOLECCIÓN exacta de tu imagen (Reseñas con R mayúscula)
   Future<List<Resena>> obtenerResenas(String lugarId) async {
     try {
-      print("🚀 Intentando leer de: Lugares/$lugarId/Reseñas");
-      
       final snapshot = await _firestore
           .collection('Lugares')
           .doc(lugarId)
-          .collection('Reseñas') // Nombre exacto de tu captura de pantalla
+          .collection('Reseñas') 
+          .orderBy('fecha', descending: true)
           .get();
-
-      print("✅ ¡ÉXITO! Se encontraron ${snapshot.docs.length} reseñas.");
       
       return snapshot.docs.map((doc) => Resena.fromFirestore(doc)).toList();
     } catch (e) {
-      print("🚨 ERROR EN FIREBASE: $e");
       rethrow;
     }
   }
@@ -94,10 +89,20 @@ class Resena {
 
   factory Resena.fromFirestore(DocumentSnapshot doc) {
     final datos = doc.data() as Map<String, dynamic>;
+    
+    // --- MEJORA: Detección inteligente de tipos ---
+    dynamic cal = datos['calificacion'] ?? 0;
+    double calFinal = 0;
+    if (cal is num) {
+      calFinal = cal.toDouble();
+    } else if (cal is String) {
+      calFinal = double.tryParse(cal) ?? 0;
+    }
+
     return Resena(
-      nombreUsuario: datos['nombreUsuario'] ?? 'Anónimo',
-      comentario: datos['comentario'] ?? '',
-      calificacion: (datos['calificacion'] ?? 0).toDouble(),
+      nombreUsuario: datos['nombreUsuario']?.toString() ?? 'Anónimo',
+      comentario: datos['comentario']?.toString() ?? 'Sin comentario',
+      calificacion: calFinal,
       fecha: (datos['fecha'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }

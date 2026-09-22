@@ -19,14 +19,11 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
   final TextEditingController _buscador = TextEditingController();
   GoogleMapController? _mapa;
   Set<Marker> _marcadores = {};
-  List<Lugar> _resultados = [];
+  List<Lugar> _resultadosBusqueda = []; // Para los resultados mientras escribe
   Position? _posicion;
   bool _cargando = true;
-  bool _buscando = false;
   bool _mostrarResultados = false;
-  bool _ubicacionCargando = true;
-  String? _mensajeUbicacion;
-
+  
   String _categoriaSeleccionada = 'Todos';
   final List<String> _categorias = ['Todos', 'Playa', 'Montaña', 'Ciudad', 'Aventura', 'Cultura'];
 
@@ -44,11 +41,10 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
     super.dispose();
   }
 
+  // Carga inicial y por categoría
   Future<void> _cargarLugares() async {
-    setState(() => _cargando = true);
     try {
-      // Ahora incluimos el texto del buscador para que Felipe pueda buscar nombres
-      final lugares = await _servicio.buscarLugares(_buscador.text, categoria: _categoriaSeleccionada);
+      final lugares = await _servicio.buscarLugares("", categoria: _categoriaSeleccionada);
       final marcadores = <Marker>{};
       for (var lugar in lugares) {
         marcadores.add(
@@ -64,14 +60,31 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
     } catch (_) { if (mounted) setState(() => _cargando = false); }
   }
 
+  // Busca mientras el usuario escribe (Imagen 2)
+  Future<void> _buscarMientrasEscribe(String texto) async {
+    if (texto.isEmpty) {
+      setState(() => _mostrarResultados = false);
+      return;
+    }
+    try {
+      final resultados = await _servicio.buscarLugares(texto, categoria: _categoriaSeleccionada);
+      if (mounted) {
+        setState(() {
+          _resultadosBusqueda = resultados;
+          _mostrarResultados = true;
+        });
+      }
+    } catch (_) {}
+  }
+
   Future<void> _cargarUbicacion() async {
     try {
       final posicion = await Geolocator.getCurrentPosition();
       if (mounted) {
-        setState(() { _posicion = posicion; _ubicacionCargando = false; });
+        setState(() { _posicion = posicion; });
         _moverCamara(LatLng(posicion.latitude, posicion.longitude));
       }
-    } catch (_) { if (mounted) setState(() => _ubicacionCargando = false); }
+    } catch (_) {}
   }
 
   void _moverCamara(LatLng destino) {
@@ -100,11 +113,15 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
               children: [
                 _barraBusqueda(),
                 const SizedBox(height: 10),
-                _filtros(),
+                // Solo mostrar filtros si no hay resultados de búsqueda abiertos
+                if (!_mostrarResultados) _filtros(),
+                
+                // --- RESULTADOS FLOTANTES (ESTILO IMAGEN 2) ---
                 if (_mostrarResultados) _listaResultados(),
+                
                 const Spacer(),
-                _botonUbicacion(),
-                _panelInferior(),
+                if (!_mostrarResultados) _botonUbicacion(),
+                if (!_mostrarResultados) _panelInferior(),
               ],
             ),
           ),
@@ -122,24 +139,53 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
       borderRadius: BorderRadius.circular(28),
       child: TextField(
         controller: _buscador,
-        onSubmitted: (_) => _cargarLugares(), // Acción al presionar Enter
-        onChanged: (value) {
-           // Si borra todo, recargamos automáticamente
-           if (value.isEmpty) _cargarLugares();
-        },
+        onChanged: _buscarMientrasEscribe, // Busca mientras escribe (Imagen 2)
         decoration: InputDecoration(
           hintText: '¿Qué quieres explorar?',
-          prefixIcon: IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: _cargarLugares, // Botón de lupa funcional
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: IconButton(
+            icon: const Icon(Icons.person_outline),
+            onPressed: () {},
           ),
-          suffixIcon: const Icon(Icons.person_outline),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 14),
         ),
       ),
     ),
   );
+
+  Widget _listaResultados() {
+    if (_resultadosBusqueda.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Container(
+        constraints: const BoxConstraints(maxHeight: 200),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(15),
+          boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 10)],
+        ),
+        child: ListView.builder(
+          shrinkWrap: true,
+          padding: EdgeInsets.zero,
+          itemCount: _resultadosBusqueda.length,
+          itemBuilder: (context, index) {
+            final lugar = _resultadosBusqueda[index];
+            return ListTile(
+              leading: const Icon(Icons.location_on, color: AppTheme.verdeAzulado),
+              title: Text(lugar.nombre, style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(lugar.ubicacion, maxLines: 1, overflow: TextOverflow.ellipsis),
+              onTap: () {
+                setState(() => _mostrarResultados = false);
+                _moverCamara(LatLng(lugar.latitud, lugar.longitud));
+                _abrirDetalle(lugar);
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
 
   Widget _filtros() => SizedBox(
     height: 36,
@@ -213,8 +259,6 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
       ],
     ),
   );
-
-  Widget _listaResultados() => const SizedBox.shrink();
 }
 
 class _LugarCercano extends StatelessWidget {
