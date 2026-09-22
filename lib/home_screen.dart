@@ -6,6 +6,7 @@ import 'mapa_exploracion_screen.dart';
 import 'recomendaciones_service.dart';
 import 'lugares_service.dart';
 import 'detalle_lugar_screen.dart';
+import 'test_recommendations_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, this.rol, this.avisoRevision, this.forzarIndiceMapa = false});
@@ -86,6 +87,20 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildInicioTab() {
     return Scaffold(
       backgroundColor: AppTheme.crema,
+      // TODO(temporal): botón solo para probar el flujo de recomendaciones
+      // con IA de punta a punta. Quitar cuando esta HU tenga su UI final.
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'probar-ia',
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const TestRecommendationsScreen(),
+            ),
+          );
+        },
+        icon: const Icon(Icons.smart_toy_outlined),
+        label: const Text('Probar IA'),
+      ),
       appBar: AppBar(
         title: const Text('TripMeet'),
         actions: [
