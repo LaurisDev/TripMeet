@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-
-import 'app_theme.dart';
 import 'auth_service.dart';
 import 'home_screen.dart';
 import 'registro_screen.dart';
+import 'app_theme.dart';
 
-/// Pantalla de inicio de sesión con el estilo visual de TripMeet.
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, this.authService});
-
   final AuthService? authService;
 
   @override
@@ -34,14 +31,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bool esPantallaPequena = MediaQuery.of(context).size.width < 360;
-    final double paddingHorizontal = esPantallaPequena ? 16 : 24;
-    final double altoPantalla = MediaQuery.of(context).size.height;
+    final bool esChica = MediaQuery.of(context).size.width < 360;
+    final double alto = MediaQuery.of(context).size.height;
 
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // IMAGEN DE FONDO (IGUAL A REGISTRO)
           Positioned.fill(
             child: Image.asset(
               'assets/images/atardecer_playa.jpg.jpg',
@@ -49,6 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
               alignment: const Alignment(0.0, 0.3),
             ),
           ),
+          // OVERLAY OSCURO
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
@@ -56,11 +54,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Colors.black.withValues(alpha: 0.1),
-                    Colors.black.withValues(alpha: 0.3),
-                    AppTheme.crema.withValues(alpha: 0.85),
+                    Colors.black.withValues(alpha: 0.2),
+                    AppTheme.crema.withValues(alpha: 0.9),
                   ],
-                  stops: const [0.0, 0.4, 0.9],
                 ),
               ),
             ),
@@ -69,156 +65,74 @@ class _LoginScreenState extends State<LoginScreen> {
             child: SingleChildScrollView(
               child: Column(
                 children: [
-                  SizedBox(height: altoPantalla * 0.15),
+                  SizedBox(height: alto * 0.2),
                   Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: paddingHorizontal,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: Card(
-                      color: Colors.white.withValues(alpha: 0.92),
+                      color: Colors.white.withValues(alpha: 0.95),
                       elevation: 12,
-                      shadowColor: Colors.black.withValues(alpha: 0.15),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                       child: Padding(
-                        padding: EdgeInsets.all(esPantallaPequena ? 20 : 28),
+                        padding: const EdgeInsets.all(28),
                         child: Form(
                           key: _formKey,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Bienvenido de nuevo',
-                                style: GoogleFonts.workSans(
-                                  fontSize: esPantallaPequena ? 22 : 24,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppTheme.azulPetroleo,
-                                  height: 1.2,
-                                ),
-                              ),
+                              Text('TripMeet', style: GoogleFonts.fraunces(fontSize: 32, fontWeight: FontWeight.bold, color: AppTheme.azulPetroleo)),
                               const SizedBox(height: 4),
-                              Text(
-                                'Conecta con tu próxima aventura.',
-                                style: GoogleFonts.workSans(
-                                  fontSize: esPantallaPequena ? 14 : 16,
-                                  color: AppTheme.textoSuave,
-                                  height: 1.4,
-                                ),
-                              ),
-                              const SizedBox(height: 24),
+                              Text('Qué alegría verte de nuevo.', style: GoogleFonts.workSans(color: Colors.grey.shade600, fontSize: 16)),
+                              const SizedBox(height: 32),
+                              
+                              // CAMPO CORREO
                               TextFormField(
                                 controller: _correoController,
-                                enabled: !_cargando,
-                                keyboardType: TextInputType.emailAddress,
-                                textInputAction: TextInputAction.next,
-                                decoration: _decoracionCampo(
-                                  label: 'Correo electrónico',
-                                  hint: 'correo@viaje.com',
-                                  icon: Icons.email_outlined,
+                                decoration: InputDecoration(
+                                  labelText: 'Correo electrónico',
+                                  prefixIcon: const Icon(Icons.email_outlined),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
                                 ),
-                                validator: (String? valor) {
-                                  if (valor == null || valor.trim().isEmpty) {
-                                    return 'Ingresa tu correo electrónico';
-                                  }
-                                  if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-                                      .hasMatch(valor.trim())) {
-                                    return 'Correo electrónico inválido';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 14),
-                              TextFormField(
-                                controller: _passwordController,
-                                enabled: !_cargando,
-                                obscureText: _obscurePassword,
-                                textInputAction: TextInputAction.done,
-                                onFieldSubmitted: (_) => _iniciarSesion(),
-                                decoration: _decoracionCampo(
-                                  label: 'Contraseña',
-                                  hint: 'Ingresa tu contraseña',
-                                  icon: Icons.lock_outline,
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _obscurePassword
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
-                                      color: Colors.grey.shade600,
-                                      size: 20,
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        _obscurePassword = !_obscurePassword;
-                                      });
-                                    },
-                                  ),
-                                ),
-                                validator: (String? valor) {
-                                  if (valor == null || valor.isEmpty) {
-                                    return 'Ingresa tu contraseña';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 28),
-                              SizedBox(
-                                width: double.infinity,
-                                height: 52,
-                                child: FilledButton(
-                                  onPressed: _cargando ? null : _iniciarSesion,
-                                  child: _cargando
-                                      ? const SizedBox(
-                                          width: 24,
-                                          height: 24,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2.5,
-                                            color: Colors.white,
-                                          ),
-                                        )
-                                      : Text(
-                                          'Iniciar sesión',
-                                          style: GoogleFonts.workSans(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                ),
+                                validator: (v) => v!.isEmpty ? 'Ingresa tu correo' : null,
                               ),
                               const SizedBox(height: 16),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    '¿Aún no tienes cuenta?',
-                                    style: GoogleFonts.workSans(
-                                      color: AppTheme.textoSuave,
-                                      fontSize: 14,
-                                    ),
+
+                              // CAMPO CONTRASEÑA
+                              TextFormField(
+                                controller: _passwordController,
+                                obscureText: _obscurePassword,
+                                decoration: InputDecoration(
+                                  labelText: 'Contraseña',
+                                  prefixIcon: const Icon(Icons.lock_outline),
+                                  suffixIcon: IconButton(
+                                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
+                                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                                   ),
-                                  TextButton(
-                                    onPressed: _cargando
-                                        ? null
-                                        : () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute<void>(
-                                                builder: (_) =>
-                                                    const RegistroScreen(),
-                                              ),
-                                            );
-                                          },
-                                    child: Text(
-                                      'Crear cuenta',
-                                      style: GoogleFonts.workSans(
-                                        color: AppTheme.verdeAzulado,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
+                                ),
+                                validator: (v) => v!.isEmpty ? 'Ingresa tu contraseña' : null,
+                              ),
+                              const SizedBox(height: 32),
+
+                              // BOTÓN ENTRAR
+                              SizedBox(
+                                width: double.infinity,
+                                height: 55,
+                                child: ElevatedButton(
+                                  onPressed: _cargando ? null : _iniciarSesion,
+                                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.azulPetroleo, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
+                                  child: _cargando 
+                                    ? const CircularProgressIndicator(color: Colors.white)
+                                    : const Text('Iniciar Sesión', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              
+                              // ENLACE REGISTRO
+                              Center(
+                                child: TextButton(
+                                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RegistroScreen())),
+                                  child: Text('¿No tienes cuenta? Regístrate aquí', style: TextStyle(color: AppTheme.verdeAzulado, fontWeight: FontWeight.bold)),
+                                ),
                               ),
                             ],
                           ),
@@ -226,7 +140,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
                 ],
               ),
             ),
@@ -236,64 +149,23 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  InputDecoration _decoracionCampo({
-    required String label,
-    required String hint,
-    required IconData icon,
-    Widget? suffixIcon,
-  }) {
-    return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      prefixIcon: Icon(icon),
-      suffixIcon: suffixIcon,
-      filled: true,
-      fillColor: Colors.white,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade200),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppTheme.verdeAzulado, width: 2),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-    );
-  }
-
   Future<void> _iniciarSesion() async {
-    FocusManager.instance.primaryFocus?.unfocus();
     if (!_formKey.currentState!.validate()) return;
-
     setState(() => _cargando = true);
     try {
-      await _authService.iniciarSesion(
-        _correoController.text.trim(),
-        _passwordController.text,
-      );
-
+      await _authService.iniciarSesion(_correoController.text.trim(), _passwordController.text);
       if (!mounted) return;
-      Navigator.pushReplacement(
+      
+      // REDIRECCIÓN AL MAPA (Como pidió Juliana)
+      // Usamos pushAndRemoveUntil para que no se pueda volver atrás al login
+      Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(builder: (_) => const HomeScreen(forzarIndiceMapa: true)),
+        (route) => false,
       );
-    } on AuthServiceException catch (error) {
-      if (!mounted) return;
+    } catch (e) {
       setState(() => _cargando = false);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error.message)));
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _cargando = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudo iniciar sesión. Inténtalo de nuevo.'),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error al entrar: $e')));
     }
   }
 }

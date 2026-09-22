@@ -1,292 +1,252 @@
 import 'package:flutter/material.dart';
-
-import 'app_theme.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'lugares_service.dart';
+import 'app_theme.dart';
 
-class DetalleLugarScreen extends StatelessWidget {
+class DetalleLugarScreen extends StatefulWidget {
   final Lugar lugar;
 
-  const DetalleLugarScreen({
-    super.key,
-    required this.lugar,
-  });
+  const DetalleLugarScreen({super.key, required this.lugar});
+
+  @override
+  State<DetalleLugarScreen> createState() => _DetalleLugarScreenState();
+}
+
+class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
+  final LugaresService _lugaresService = LugaresService();
+  final TextEditingController _comentarioController = TextEditingController();
+  List<Resena> _resenas = [];
+  bool _cargandoResenas = true;
+  bool _guardando = false;
+  double _estrellasSeleccionadas = 5;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarResenas();
+  }
+
+  Future<void> _cargarResenas() async {
+    setState(() {
+      _cargandoResenas = true;
+      _error = null;
+    });
+    try {
+      final resenas = await _lugaresService.obtenerResenas(widget.lugar.id);
+      if (mounted) {
+        setState(() {
+          _resenas = resenas;
+          _cargandoResenas = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = "No se pudieron cargar las reseñas.";
+          _cargandoResenas = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _guardarResena(BuildContext context, Function setModalState) async {
+    if (_comentarioController.text.trim().isEmpty) return;
+    final user = FirebaseAuth.instance.currentUser;
+    final String nombreUsuario = user?.email?.split('@')[0] ?? 'Viajero';
+    
+    setModalState(() => _guardando = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('Lugares')
+          .doc(widget.lugar.id)
+          .collection('Reseñas') // Nombre exacto con R mayúscula
+          .add({
+        'usuarioId': user?.uid ?? '',
+        'nombreUsuario': nombreUsuario, 
+        'comentario': _comentarioController.text.trim(),
+        'calificacion': _estrellasSeleccionadas,
+        'fecha': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+      _comentarioController.clear();
+      Navigator.pop(context);
+      _cargarResenas(); 
+    } catch (e) {
+      if (mounted) {
+        setModalState(() => _guardando = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final bool tieneDescripcion = lugar.descripcion.trim().isNotEmpty;
-    final bool tieneFotos = lugar.fotos.isNotEmpty;
+    final bool tieneDescripcion = widget.lugar.descripcion.trim().isNotEmpty;
+    final bool tieneFotos = widget.lugar.fotos.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Detalle del lugar'),
+      backgroundColor: Colors.white,
+      appBar: AppBar(title: const Text('Detalle del lugar')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _mostrarFormularioResena(context),
+        backgroundColor: AppTheme.verdeAzulado,
+        icon: const Icon(Icons.rate_review_rounded, color: Colors.white),
+        label: const Text('Calificar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
       body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _imagenPrincipal(context, tieneFotos),
-
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    lugar.nombre,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Ubicación
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppTheme.superficieClara,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: AppTheme.verdeAzulado.withValues(alpha: 0.25),
-                      ),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppTheme.verdeAzulado.withValues(alpha: 0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.location_on,
-                            color: AppTheme.verdeAzulado,
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Ubicación',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelLarge
-                                    ?.copyWith(
-                                      color: AppTheme.azulPetroleo,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                lugar.ubicacion.isEmpty
-                                    ? 'Ubicación no disponible'
-                                    : lugar.ubicacion,
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  _seccionDescripcion(context, tieneDescripcion),
-
-                  const SizedBox(height: 24),
-
-                  _seccionFotos(context, tieneFotos),
-                ],
-              ),
-            ),
+            _buildImagenPrincipal(tieneFotos),
+            const SizedBox(height: 20),
+            Text(widget.lugar.nombre, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            _buildUbicacion(),
+            const SizedBox(height: 24),
+            const Text('Descripción', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(tieneDescripcion ? widget.lugar.descripcion : 'Sin descripción.', 
+              style: const TextStyle(fontSize: 16, height: 1.5, color: Colors.black87)),
+            const SizedBox(height: 32),
+            _seccionFotos(tieneFotos),
+            const Divider(height: 60),
+            _buildEncabezadoResenas(),
+            const SizedBox(height: 20),
+            if (_cargandoResenas)
+              const Center(child: CircularProgressIndicator())
+            else if (_error != null)
+              _buildErrorCase()
+            else if (_resenas.isEmpty)
+              const Center(child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: Text('Este lugar aún no tiene reseñas.', style: TextStyle(color: Colors.grey)),
+              ))
+            else
+              _buildListaResenas(),
           ],
         ),
       ),
     );
   }
 
-  Widget _imagenPrincipal(
-    BuildContext context,
-    bool tieneFotos,
-  ) {
-    if (!tieneFotos) {
-      return Container(
-        height: 260,
-        width: double.infinity,
-        decoration: const BoxDecoration(
-          color: AppTheme.azulPetroleo,
-          borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(28),
-            bottomRight: Radius.circular(28),
-          ),
-        ),
-        alignment: Alignment.center,
-        child: const Icon(
-          Icons.landscape_outlined,
-          color: AppTheme.crema,
-          size: 64,
-        ),
-      );
+  Widget _buildEncabezadoResenas() {
+    double promedio = 0;
+    if (_resenas.isNotEmpty) {
+      promedio = _resenas.fold(0.0, (p, e) => p + e.calificacion) / _resenas.length;
     }
-
-    return ClipRRect(
-      borderRadius: const BorderRadius.only(
-        bottomLeft: Radius.circular(28),
-        bottomRight: Radius.circular(28),
-      ),
-      child: SizedBox(
-        height: 280,
-        width: double.infinity,
-        child: Stack(
-          fit: StackFit.expand,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Reseñas', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 8),
+        Row(
           children: [
-            Image.network(
-              lugar.fotos.first,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => Container(
-                color: AppTheme.azulPetroleo,
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.broken_image_outlined,
-                  color: AppTheme.crema,
-                  size: 52,
-                ),
-              ),
-            ),
+            const Icon(Icons.star, color: Colors.amber, size: 24),
+            const SizedBox(width: 4),
+            Text(promedio.toStringAsFixed(1), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(width: 8),
+            Text('(${_resenas.length} opiniones)', style: const TextStyle(color: Colors.grey)),
+          ],
+        ),
+      ],
+    );
+  }
 
-            // Degradado para mejorar la lectura de la categoría.
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: 0.55),
+  Widget _buildListaResenas() {
+    return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _resenas.length,
+      itemBuilder: (context, index) {
+        final r = _resenas[index];
+        return Card(
+          margin: const EdgeInsets.only(bottom: 16),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(r.nombreUsuario, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    Row(
+                      children: List.generate(5, (i) => Icon(
+                        Icons.star_rounded, 
+                        size: 16, 
+                        color: i < r.calificacion ? Colors.amber : Colors.grey.shade300
+                      )),
+                    ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 8),
+                Text(r.comentario, style: const TextStyle(color: Colors.black87)),
+                const SizedBox(height: 12),
+                Text("${r.fecha.day}/${r.fecha.month}/${r.fecha.year}", style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              ],
             ),
+          ),
+        );
+      },
+    );
+  }
 
-            if (lugar.categoria.trim().isNotEmpty)
-              Positioned(
-                left: 20,
-                bottom: 20,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppTheme.naranjaQuemado,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.explore_outlined,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 7),
-                      Text(
-                        lugar.categoria,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
+  void _mostrarFormularioResena(BuildContext context) {
+    _guardando = false;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 24, right: 24, top: 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('¿Cómo fue tu viaje?', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 15),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(5, (index) => IconButton(
+                  onPressed: () => setModalState(() => _estrellasSeleccionadas = index + 1.0),
+                  icon: Icon(Icons.star_rounded, size: 40, color: index < _estrellasSeleccionadas ? Colors.amber : Colors.grey.shade300),
+                )),
+              ),
+              const SizedBox(height: 15),
+              TextField(
+                controller: _comentarioController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Cuéntanos tu experiencia...',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(15)),
                 ),
               ),
-          ],
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _guardando ? null : () => _guardarResena(context, setModalState),
+                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.azulPetroleo, minimumSize: const Size(double.infinity, 55)),
+                child: _guardando ? const CircularProgressIndicator(color: Colors.white) : const Text('Publicar', style: TextStyle(color: Colors.white)),
+              ),
+              const SizedBox(height: 30),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _seccionDescripcion(
-    BuildContext context,
-    bool tieneDescripcion,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Descripción',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: 10),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.black12),
-          ),
-          child: Text(
-            tieneDescripcion
-                ? lugar.descripcion
-                : 'La información de este lugar aún no está disponible.',
-            style: Theme.of(context)
-                .textTheme
-                .bodyLarge
-                ?.copyWith(height: 1.45),
-          ),
-        ),
-      ],
-    );
-  }
+  Widget _buildErrorCase() => Center(child: Column(children: [Text(_error!, style: const TextStyle(color: Colors.red)), TextButton(onPressed: _cargarResenas, child: const Text('Reintentar'))]));
 
-  Widget _seccionFotos(
-    BuildContext context,
-    bool tieneFotos,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Fotos',
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: 10),
-        if (!tieneFotos)
-          const Text('No hay fotos disponibles.')
-        else
-          SizedBox(
-            height: 120,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: lugar.fotos.length,
-              separatorBuilder: (_, _) => const SizedBox(width: 12),
-              itemBuilder: (context, index) => ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: Image.network(
-                  lugar.fotos[index],
-                  width: 170,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
-                    width: 170,
-                    color: Colors.grey.shade300,
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.broken_image_outlined,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
+  Widget _buildImagenPrincipal(bool tieneFotos) => ClipRRect(borderRadius: BorderRadius.circular(20), child: tieneFotos ? Image.network(widget.lugar.fotos.first, height: 250, width: double.infinity, fit: BoxFit.cover) : Container(height: 250, color: Colors.grey.shade200, child: const Icon(Icons.image_not_supported, size: 64)));
+
+  Widget _buildUbicacion() => Row(children: [const Icon(Icons.location_on, color: AppTheme.verdeAzulado, size: 18), const SizedBox(width: 4), Expanded(child: Text(widget.lugar.ubicacion, style: const TextStyle(color: Colors.grey)))]);
+
+  Widget _seccionFotos(bool tieneFotos) {
+    if (!tieneFotos) return const SizedBox.shrink();
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('Galería', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)), const SizedBox(height: 12), SizedBox(height: 120, child: ListView.separated(scrollDirection: Axis.horizontal, itemCount: widget.lugar.fotos.length, separatorBuilder: (_, __) => const SizedBox(width: 12), itemBuilder: (context, index) => ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(widget.lugar.fotos[index], width: 180, fit: BoxFit.cover))))]);
   }
 }

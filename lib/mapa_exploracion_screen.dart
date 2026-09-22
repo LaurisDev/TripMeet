@@ -1,7 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-
 import 'app_theme.dart';
 import 'detalle_lugar_screen.dart';
 import 'lugares_service.dart';
@@ -14,12 +14,8 @@ class MapaExploracionScreen extends StatefulWidget {
 }
 
 class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
-  static const _colombia = CameraPosition(
-    target: LatLng(4.5709, -74.2973),
-    zoom: 5.5,
-  );
-
-  final LugarService _servicio = LugarService();
+  static const _colombia = CameraPosition(target: LatLng(4.5709, -74.2973), zoom: 5.5);
+  final LugaresService _servicio = LugaresService();
   final TextEditingController _buscador = TextEditingController();
   GoogleMapController? _mapa;
   Set<Marker> _marcadores = {};
@@ -29,8 +25,10 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
   bool _buscando = false;
   bool _mostrarResultados = false;
   bool _ubicacionCargando = true;
-  String? _error;
   String? _mensajeUbicacion;
+
+  String _categoriaSeleccionada = 'Todos';
+  final List<String> _categorias = ['Todos', 'Playa', 'Montaña', 'Ciudad', 'Aventura', 'Cultura'];
 
   @override
   void initState() {
@@ -47,200 +45,41 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
   }
 
   Future<void> _cargarLugares() async {
-    setState(() {
-      _cargando = true;
-      _error = null;
-    });
+    setState(() => _cargando = true);
     try {
-      final lugares = await _servicio.obtenerLugares();
+      // Ahora incluimos el texto del buscador para que Felipe pueda buscar nombres
+      final lugares = await _servicio.buscarLugares(_buscador.text, categoria: _categoriaSeleccionada);
       final marcadores = <Marker>{};
-      for (var i = 0; i < lugares.length; i++) {
-        final lugar = lugares[i];
-        if (!_coordenadasValidas(lugar.latitud, lugar.longitud)) {
-          continue;
-        }
+      for (var lugar in lugares) {
         marcadores.add(
           Marker(
-            markerId: MarkerId('lugar_$i'),
+            markerId: MarkerId(lugar.id),
             position: LatLng(lugar.latitud, lugar.longitud),
-            infoWindow: InfoWindow(
-              title: lugar.nombre,
-              snippet: lugar.ubicacion,
-            ),
+            infoWindow: InfoWindow(title: lugar.nombre, snippet: lugar.ubicacion, onTap: () => _abrirDetalle(lugar)),
             onTap: () => _abrirDetalle(lugar),
           ),
         );
       }
-      if (!mounted) return;
-      setState(() {
-        _marcadores = marcadores;
-        _cargando = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _cargando = false;
-        _error = 'No se pudieron cargar los lugares.';
-      });
-    }
+      if (mounted) setState(() { _marcadores = marcadores; _cargando = false; });
+    } catch (_) { if (mounted) setState(() => _cargando = false); }
   }
 
   Future<void> _cargarUbicacion() async {
-    setState(() {
-      _ubicacionCargando = true;
-      _mensajeUbicacion = null;
-    });
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      _informarUbicacion('Activa el GPS para centrar el mapa en tu ubicación.');
-      return;
-    }
-    var permiso = await Geolocator.checkPermission();
-    if (permiso == LocationPermission.denied) {
-      permiso = await Geolocator.requestPermission();
-    }
-    if (permiso == LocationPermission.denied) {
-      _informarUbicacion(
-        'Permiso denegado. El mapa seguirá centrado en Colombia.',
-      );
-      return;
-    }
-    if (permiso == LocationPermission.deniedForever) {
-      _informarUbicacion(
-        'La ubicación está bloqueada. Habilítala desde Ajustes.',
-        ajustes: true,
-      );
-      return;
-    }
     try {
-      final posicion = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-        ),
-      );
-      if (!mounted) return;
-      setState(() {
-        _posicion = posicion;
-        _ubicacionCargando = false;
-      });
-      await _moverCamara(
-        LatLng(posicion.latitude, posicion.longitude),
-        zoom: 15,
-      );
-    } catch (_) {
-      _informarUbicacion(
-        'No se pudo obtener tu ubicación. El mapa seguirá disponible.',
-      );
-    }
+      final posicion = await Geolocator.getCurrentPosition();
+      if (mounted) {
+        setState(() { _posicion = posicion; _ubicacionCargando = false; });
+        _moverCamara(LatLng(posicion.latitude, posicion.longitude));
+      }
+    } catch (_) { if (mounted) setState(() => _ubicacionCargando = false); }
   }
 
-  void _informarUbicacion(String mensaje, {bool ajustes = false}) {
-    if (!mounted) return;
-    setState(() {
-      _ubicacionCargando = false;
-      _mensajeUbicacion = mensaje;
-    });
-    if (ajustes) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(mensaje),
-          action: SnackBarAction(
-            label: 'Ajustes',
-            onPressed: Geolocator.openAppSettings,
-          ),
-        ),
-      );
-    }
+  void _moverCamara(LatLng destino) {
+    _mapa?.animateCamera(CameraUpdate.newCameraPosition(CameraPosition(target: destino, zoom: 15)));
   }
-
-  Future<void> _buscar(String texto) async {
-    final consulta = texto.trim();
-    if (consulta.isEmpty) {
-      setState(() {
-        _resultados = [];
-        _mostrarResultados = false;
-      });
-      return;
-    }
-    setState(() {
-      _buscando = true;
-      _mostrarResultados = true;
-    });
-    try {
-      final resultados = await _servicio.buscarLugares(consulta);
-      if (!mounted) return;
-      setState(() {
-        _resultados = resultados;
-        _buscando = false;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _resultados = [];
-        _buscando = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No se pudo conectar con los lugares guardados.'),
-        ),
-      );
-    }
-  }
-
-  Future<void> _seleccionar(Lugar lugar) async {
-    FocusManager.instance.primaryFocus?.unfocus();
-    _buscador.text = lugar.nombre;
-    setState(() {
-      _mostrarResultados = false;
-    });
-    if (!_coordenadasValidas(lugar.latitud, lugar.longitud)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Este lugar no tiene coordenadas válidas para el mapa.',
-          ),
-        ),
-      );
-      return;
-    }
-    await _moverCamara(LatLng(lugar.latitud, lugar.longitud), zoom: 14);
-    if (mounted) _abrirDetalle(lugar);
-  }
-
-  Future<void> _moverCamara(LatLng destino, {double zoom = 14}) async {
-    final mapa = _mapa;
-    if (mapa == null) return;
-    await mapa.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: destino, zoom: zoom),
-      ),
-    );
-  }
-
-  Future<void> _centrarUsuario() async {
-    if (_posicion == null) {
-      await _cargarUbicacion();
-      return;
-    }
-    await _moverCamara(
-      LatLng(_posicion!.latitude, _posicion!.longitude),
-      zoom: 15,
-    );
-  }
-
-  bool _coordenadasValidas(double latitud, double longitud) =>
-      latitud.isFinite &&
-      longitud.isFinite &&
-      latitud >= -90 &&
-      latitud <= 90 &&
-      longitud >= -180 &&
-      longitud <= 180 &&
-      (latitud != 0 || longitud != 0);
 
   void _abrirDetalle(Lugar lugar) {
-    Navigator.push(
-      context,
-      MaterialPageRoute<void>(builder: (_) => DetalleLugarScreen(lugar: lugar)),
-    );
+    Navigator.push(context, MaterialPageRoute(builder: (_) => DetalleLugarScreen(lugar: lugar)));
   }
 
   @override
@@ -254,18 +93,7 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
             markers: _marcadores,
             myLocationEnabled: _posicion != null,
             myLocationButtonEnabled: false,
-            compassEnabled: false,
-            mapToolbarEnabled: false,
-            onMapCreated: (controller) {
-              _mapa = controller;
-              final posicion = _posicion;
-              if (posicion != null) {
-                _moverCamara(
-                  LatLng(posicion.latitude, posicion.longitude),
-                  zoom: 15,
-                );
-              }
-            },
+            onMapCreated: (controller) => _mapa = controller,
           ),
           SafeArea(
             child: Column(
@@ -273,7 +101,6 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
                 _barraBusqueda(),
                 const SizedBox(height: 10),
                 _filtros(),
-                if (_mensajeUbicacion != null) _avisoUbicacion(),
                 if (_mostrarResultados) _listaResultados(),
                 const Spacer(),
                 _botonUbicacion(),
@@ -281,10 +108,7 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
               ],
             ),
           ),
-          if (_cargando) _carga(),
-          if (_error != null) _avisoError(),
-          if (!_cargando && _error == null && _marcadores.isEmpty)
-            _sinLugares(),
+          if (_cargando) const Center(child: CircularProgressIndicator()),
         ],
       ),
     );
@@ -293,20 +117,25 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
   Widget _barraBusqueda() => Padding(
     padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
     child: Material(
-      color: AppTheme.superficieClara,
+      color: Colors.white,
       elevation: 5,
       borderRadius: BorderRadius.circular(28),
       child: TextField(
         controller: _buscador,
-        onChanged: _buscar,
-        onSubmitted: _buscar,
-        textInputAction: TextInputAction.search,
-        decoration: const InputDecoration(
+        onSubmitted: (_) => _cargarLugares(), // Acción al presionar Enter
+        onChanged: (value) {
+           // Si borra todo, recargamos automáticamente
+           if (value.isEmpty) _cargarLugares();
+        },
+        decoration: InputDecoration(
           hintText: '¿Qué quieres explorar?',
-          prefixIcon: Icon(Icons.search),
-          suffixIcon: Icon(Icons.person_outline),
+          prefixIcon: IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: _cargarLugares, // Botón de lupa funcional
+          ),
+          suffixIcon: const Icon(Icons.person_outline),
           border: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(vertical: 14),
         ),
       ),
     ),
@@ -314,65 +143,36 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
 
   Widget _filtros() => SizedBox(
     height: 36,
-    child: ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 18),
+    child: ListView.builder(
       scrollDirection: Axis.horizontal,
-      children: const [
-        _FiltroMapa('Medellín y alrededores', true),
-        _FiltroMapa('Restaurantes'),
-        _FiltroMapa('Guías'),
-      ],
-    ),
-  );
-
-  Widget _listaResultados() => Container(
-    margin: const EdgeInsets.fromLTRB(18, 8, 18, 0),
-    constraints: const BoxConstraints(maxHeight: 220),
-    decoration: BoxDecoration(
-      color: AppTheme.superficieClara,
-      borderRadius: BorderRadius.circular(16),
-      boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
-    ),
-    child: _buscando
-        ? const Padding(
-            padding: EdgeInsets.all(18),
-            child: Center(child: CircularProgressIndicator()),
-          )
-        : _resultados.isEmpty
-        ? const Padding(
-            padding: EdgeInsets.all(18),
-            child: Text('No se encontraron lugares guardados.'),
-          )
-        : ListView.builder(
-            shrinkWrap: true,
-            itemCount: _resultados.length,
-            itemBuilder: (_, i) {
-              final lugar = _resultados[i];
-              return ListTile(
-                dense: true,
-                leading: const Icon(Icons.place, color: AppTheme.verdeAzulado),
-                title: Text(lugar.nombre),
-                subtitle: Text(lugar.ubicacion),
-                onTap: () => _seleccionar(lugar),
-                trailing: PopupMenuButton<String>(
-                  tooltip: 'Más opciones',
-                  onSelected: (opcion) {
-                    if (opcion == 'descripcion') _abrirDetalle(lugar);
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem<String>(
-                      value: 'descripcion',
-                      child: ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Icon(Icons.description_outlined),
-                        title: Text('Ver descripción'),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      itemCount: _categorias.length,
+      itemBuilder: (context, index) {
+        final cat = _categorias[index];
+        final bool destacado = _categoriaSeleccionada == cat;
+        return GestureDetector(
+          onTap: () {
+            setState(() => _categoriaSeleccionada = cat);
+            _cargarLugares();
+          },
+          child: Container(
+            margin: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 4)],
+              border: destacado ? Border.all(color: AppTheme.azulPetroleo, width: 1) : null,
+            ),
+            child: Text(cat, style: TextStyle(
+              color: destacado ? AppTheme.azulPetroleo : Colors.grey,
+              fontSize: 12,
+              fontWeight: destacado ? FontWeight.w600 : FontWeight.w500,
+            )),
           ),
+        );
+      },
+    ),
   );
 
   Widget _botonUbicacion() => Padding(
@@ -380,12 +180,10 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
     child: Align(
       alignment: Alignment.centerRight,
       child: FloatingActionButton(
-        heroTag: 'centrar-ubicacion',
         mini: true,
-        backgroundColor: AppTheme.superficieClara,
+        backgroundColor: Colors.white,
         foregroundColor: AppTheme.naranjaQuemado,
-        onPressed: _ubicacionCargando ? null : _centrarUsuario,
-        tooltip: 'Centrar en mi ubicación',
+        onPressed: _cargarUbicacion,
         child: const Icon(Icons.my_location),
       ),
     ),
@@ -395,7 +193,7 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
     width: double.infinity,
     padding: const EdgeInsets.fromLTRB(18, 10, 18, 14),
     decoration: const BoxDecoration(
-      color: AppTheme.superficieClara,
+      color: Colors.white,
       borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
     ),
     child: Column(
@@ -403,111 +201,20 @@ class _MapaExploracionScreenState extends State<MapaExploracionScreen> {
       children: [
         Center(child: Container(width: 36, height: 4, color: AppTheme.crema)),
         const SizedBox(height: 10),
-        Text('Cerca de ti', style: Theme.of(context).textTheme.titleLarge),
+        const Text('Cerca de ti', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 10),
-        const Row(
+        Row(
           children: [
-            Expanded(
-              child: _LugarCercano(
-                'Explora lugares turísticos',
-                Color(0xFF789286),
-              ),
-            ),
-            SizedBox(width: 10),
-            Expanded(
-              child: _LugarCercano('Descubre Medellín', Color(0xFFB99A78)),
-            ),
+            Expanded(child: _LugarCercano('Explora lugares turísticos', AppTheme.verdeSuave)),
+            const SizedBox(width: 10),
+            Expanded(child: _LugarCercano('Descubre Medellín', AppTheme.arena)),
           ],
         ),
       ],
     ),
   );
 
-  Widget _carga() => const Center(
-    child: Card(
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: CircularProgressIndicator(),
-      ),
-    ),
-  );
-
-  Widget _avisoError() => Center(
-    child: Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_error!),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: _cargarLugares,
-              child: const Text('Reintentar'),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  Widget _sinLugares() => Positioned(
-    left: 18,
-    right: 18,
-    bottom: 210,
-    child: Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Text(
-          'No hay lugares turísticos con coordenadas válidas.',
-          textAlign: TextAlign.center,
-        ),
-      ),
-    ),
-  );
-
-  Widget _avisoUbicacion() => Padding(
-    padding: const EdgeInsets.fromLTRB(18, 8, 18, 0),
-    child: Material(
-      color: AppTheme.superficieClara,
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Row(
-          children: [
-            const Icon(Icons.location_off, color: AppTheme.naranjaQuemado),
-            const SizedBox(width: 8),
-            Expanded(child: Text(_mensajeUbicacion!)),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _FiltroMapa extends StatelessWidget {
-  const _FiltroMapa(this.texto, [this.destacado = false]);
-  final String texto;
-  final bool destacado;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(right: 8),
-    padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-    decoration: BoxDecoration(
-      color: AppTheme.superficieClara,
-      borderRadius: BorderRadius.circular(18),
-      boxShadow: const [BoxShadow(color: Color(0x22000000), blurRadius: 4)],
-    ),
-    child: Text(
-      texto,
-      style: TextStyle(
-        color: destacado ? AppTheme.azulPetroleo : AppTheme.textoSuave,
-        fontSize: 12,
-        fontWeight: destacado ? FontWeight.w600 : FontWeight.w500,
-      ),
-    ),
-  );
+  Widget _listaResultados() => const SizedBox.shrink();
 }
 
 class _LugarCercano extends StatelessWidget {
@@ -520,19 +227,7 @@ class _LugarCercano extends StatelessWidget {
     height: 62,
     padding: const EdgeInsets.all(10),
     alignment: Alignment.bottomLeft,
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(9),
-    ),
-    child: Text(
-      nombre,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: Colors.white,
-        fontWeight: FontWeight.w600,
-        fontSize: 12,
-      ),
-    ),
+    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(9)),
+    child: Text(nombre, maxLines: 2, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12)),
   );
 }
