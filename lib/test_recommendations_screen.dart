@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'ai_recommendation_service.dart';
+import 'preferences_service.dart';
 import 'widgets/aviso_error.dart';
 
 /// Pantalla temporal para probar de punta a punta el flujo
@@ -19,6 +20,7 @@ class TestRecommendationsScreen extends StatefulWidget {
 class _TestRecommendationsScreenState
     extends State<TestRecommendationsScreen> {
   final AiRecommendationService _service = AiRecommendationService();
+  final PreferencesService _preferencesService = PreferencesService();
   final TextEditingController _interesesController = TextEditingController();
   final TextEditingController _preferenciasController =
       TextEditingController();
@@ -33,6 +35,36 @@ class _TestRecommendationsScreenState
     _interesesController.dispose();
     _preferenciasController.dispose();
     super.dispose();
+  }
+
+  /// Carga las preferencias guardadas del turista (o la lista amplia por
+  /// defecto si no ha configurado ninguna) y pide recomendaciones con ellas,
+  /// sin que tenga que volver a escribirlas.
+  Future<void> _usarPreferenciasGuardadas() async {
+    setState(() {
+      _cargando = true;
+      _error = null;
+      _recomendaciones = <PlaceRecommendation>[];
+    });
+
+    try {
+      final List<String> intereses =
+          await _preferencesService.obtenerPreferenciasParaRecomendaciones();
+      _interesesController.text = intereses.join(', ');
+
+      final List<PlaceRecommendation> resultado =
+          await _service.obtenerRecomendaciones(
+        intereses: intereses,
+        preferenciasAdicionales: _preferenciasController.text,
+      );
+      setState(() => _recomendaciones = resultado);
+    } on PreferencesServiceException catch (error) {
+      setState(() => _error = error.message);
+    } on AiRecommendationException catch (error) {
+      setState(() => _error = error.message);
+    } finally {
+      setState(() => _cargando = false);
+    }
   }
 
   Future<void> _obtenerRecomendaciones() async {
@@ -92,6 +124,11 @@ class _TestRecommendationsScreenState
             ElevatedButton(
               onPressed: _cargando ? null : _obtenerRecomendaciones,
               child: const Text('Obtener recomendaciones'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: _cargando ? null : _usarPreferenciasGuardadas,
+              child: const Text('Usar mis preferencias guardadas'),
             ),
             const SizedBox(height: 16),
             if (_cargando)

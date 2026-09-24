@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'buscar_lugares_screen.dart';
 import 'mapa_exploracion_screen.dart';
+import 'profile_screen.dart';
 import 'test_recommendations_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -30,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final List<Widget> pantallas = [
       const MapaExploracionScreen(), // Índice 0
       const BuscarLugaresScreen(),    // Índice 1
-      const Center(child: Text('Perfil próximamente')),    // Índice 2
+      const ProfileScreen(),    // Índice 2
     ];
 
     return Scaffold(
