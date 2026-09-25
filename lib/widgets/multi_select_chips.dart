@@ -18,6 +18,8 @@ class MultiSelectChips extends StatelessWidget {
     this.obligatorio = false,
     this.errorText,
     this.ayuda,
+    this.activeColor,
+    this.activeTextColor,
   });
 
   final List<String> opciones;
@@ -27,6 +29,8 @@ class MultiSelectChips extends StatelessWidget {
   final bool obligatorio;
   final String? errorText;
   final String? ayuda;
+  final Color? activeColor;
+  final Color? activeTextColor;
 
   void _alternar(String opcion) {
     final Set<String> nuevo = Set<String>.of(seleccionadas);
@@ -38,6 +42,9 @@ class MultiSelectChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Color colorActivo = activeColor ?? AppTheme.azulPetroleo;
+    final Color colorTextoActivo = activeTextColor ?? Colors.white;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -66,6 +73,8 @@ class MultiSelectChips extends StatelessWidget {
             return _Chip(
               texto: opcion,
               activa: activa,
+              activeColor: colorActivo,
+              activeTextColor: colorTextoActivo,
               onTap: () => _alternar(opcion),
             );
           }).toList(),
@@ -86,11 +95,15 @@ class _Chip extends StatelessWidget {
   const _Chip({
     required this.texto,
     required this.activa,
+    required this.activeColor,
+    required this.activeTextColor,
     required this.onTap,
   });
 
   final String texto;
   final bool activa;
+  final Color activeColor;
+  final Color activeTextColor;
   final VoidCallback onTap;
 
   @override
@@ -104,10 +117,10 @@ class _Chip extends StatelessWidget {
           vertical: FormStyles.s12,
         ),
         decoration: BoxDecoration(
-          color: activa ? AppTheme.naranjaQuemado : Colors.white,
+          color: activa ? activeColor : Colors.white,
           borderRadius: BorderRadius.circular(FormStyles.radioPill),
           border: Border.all(
-            color: activa ? AppTheme.naranjaQuemado : FormStyles.colorBorde,
+            color: activa ? activeColor : FormStyles.colorBorde,
             width: 1.5,
           ),
         ),
@@ -117,7 +130,7 @@ class _Chip extends StatelessWidget {
             Icon(
               activa ? Icons.check_rounded : Icons.add_rounded,
               size: 16,
-              color: activa ? Colors.white : AppTheme.azulPetroleo,
+              color: activa ? activeTextColor : AppTheme.azulPetroleo,
             ),
             const SizedBox(width: FormStyles.s4),
             Text(
@@ -125,7 +138,7 @@ class _Chip extends StatelessWidget {
               style: GoogleFonts.workSans(
                 fontSize: 14,
                 fontWeight: activa ? FontWeight.w600 : FontWeight.w500,
-                color: activa ? Colors.white : AppTheme.azulPetroleo,
+                color: activa ? activeTextColor : AppTheme.azulPetroleo,
               ),
             ),
           ],

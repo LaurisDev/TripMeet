@@ -107,14 +107,14 @@ class FormStyles {
   }
 
   // --- BOTÓN PRIMARIO ---
-  static ButtonStyle botonPrimario() => FilledButton.styleFrom(
-        backgroundColor: AppTheme.naranjaQuemado,
+  static ButtonStyle botonPrimario({Color? color}) => FilledButton.styleFrom(
+        backgroundColor: color ?? AppTheme.azulPetroleo,
         foregroundColor: Colors.white,
         minimumSize: const Size.fromHeight(52),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(radio),
         ),
-        elevation: 2,
+        elevation: 1,
         textStyle: GoogleFonts.workSans(
           fontSize: 16,
           fontWeight: FontWeight.w600,

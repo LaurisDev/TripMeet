@@ -64,6 +64,9 @@ class AiRecommendationService {
       );
     }
 
+    final String promptColombia =
+        _construirPreferenciasColombia(preferenciasAdicionales);
+
     http.Response respuesta;
     try {
       respuesta = await _client
@@ -74,9 +77,9 @@ class AiRecommendationService {
             },
             body: jsonEncode(<String, dynamic>{
               'interests': intereses,
-              if (preferenciasAdicionales != null &&
-                  preferenciasAdicionales.trim().isNotEmpty)
-                'additionalPreferences': preferenciasAdicionales.trim(),
+              'country': 'Colombia',
+              'region': 'Colombia',
+              'additionalPreferences': promptColombia,
             }),
           )
           .timeout(const Duration(seconds: 30));
@@ -122,6 +125,17 @@ class AiRecommendationService {
         .whereType<Map<String, dynamic>>()
         .map(PlaceRecommendation.fromJson)
         .toList();
+  }
+
+  String _construirPreferenciasColombia(String? preferenciasAdicionales) {
+    const String instruccionColombia =
+        'Recomendar únicamente lugares, destinos y atractivos turísticos ubicados exclusivamente en Colombia.';
+
+    final String prefLimpia = preferenciasAdicionales?.trim() ?? '';
+    if (prefLimpia.isEmpty) {
+      return instruccionColombia;
+    }
+    return '$instruccionColombia Nota adicional del turista: $prefLimpia';
   }
 
   String _mensajeDeError(int statusCode, Map<String, dynamic>? datos) {
