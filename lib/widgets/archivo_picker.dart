@@ -27,18 +27,24 @@ class SeleccionArchivoException implements Exception {
 /// en memoria para funcionar igual en móvil y web). Devuelve lista vacía si el
 /// usuario cancela. Lanza [SeleccionArchivoException] si el picker no está
 /// disponible en la plataforma actual.
-Future<List<ArchivoLocal>> seleccionarArchivos({bool multiple = false}) async {
+///
+/// Por defecto solo permite PDF (certificados de guías); pasa [extensiones]
+/// para restringir a otro tipo de archivo (por ejemplo, imágenes).
+Future<List<ArchivoLocal>> seleccionarArchivos({
+  bool multiple = false,
+  List<String> extensiones = _extensionesPermitidas,
+}) async {
   List<PlatformFile> seleccionados;
   try {
     if (multiple) {
       seleccionados = await FilePicker.pickFiles(
         type: FileType.custom,
-        allowedExtensions: _extensionesPermitidas,
+        allowedExtensions: extensiones,
       );
     } else {
       final PlatformFile? archivo = await FilePicker.pickFile(
         type: FileType.custom,
-        allowedExtensions: _extensionesPermitidas,
+        allowedExtensions: extensiones,
       );
       seleccionados =
           archivo == null ? const <PlatformFile>[] : <PlatformFile>[archivo];

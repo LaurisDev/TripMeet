@@ -34,7 +34,15 @@ class CloudinaryException implements Exception {
   String toString() => message;
 }
 
-/// Sube archivos PDF a Cloudinary mediante un *unsigned upload preset*
+/// Extensión de imagen -> subtipo MIME válido para Cloudinary/`MediaType`.
+const Map<String, String> _subtiposDeImagen = <String, String>{
+  'jpg': 'jpeg',
+  'jpeg': 'jpeg',
+  'png': 'png',
+  'webp': 'webp',
+};
+
+/// Sube archivos a Cloudinary mediante un *unsigned upload preset*
 /// (no requiere API key/secret en el cliente).
 ///
 /// Cloudinary trata los PDF como `resource_type: image` (con `format: pdf`),
@@ -70,6 +78,52 @@ class CloudinaryService {
         code: 'formato-invalido',
       );
     }
+
+    return _subir(
+      bytes: bytes,
+      nombreArchivo: nombreArchivo,
+      contentType: MediaType('application', 'pdf'),
+    );
+  }
+
+  /// Sube [bytes] (debe corresponder a un archivo JPG, JPEG, PNG o WEBP) para
+  /// una publicación del turista y devuelve la URL segura generada por
+  /// Cloudinary.
+  ///
+  /// Se guarda en la carpeta `publicaciones` de Cloudinary para no mezclarla
+  /// con los certificados de guías. Si el upload preset tiene la carpeta fija
+  /// en el dashboard, este campo simplemente se ignora.
+  ///
+  /// Lanza [CloudinaryException] con un mensaje listo para mostrar en la UI
+  /// si el archivo no es una imagen soportada, si falla la conexión o si
+  /// Cloudinary rechaza la subida.
+  Future<CloudinarySubida> subirImagen({
+    required Uint8List bytes,
+    required String nombreArchivo,
+  }) async {
+    final String extension = nombreArchivo.toLowerCase().trim().split('.').last;
+    final String? subtipo = _subtiposDeImagen[extension];
+    if (subtipo == null) {
+      throw const CloudinaryException(
+        'Formato de imagen no válido. Formatos permitidos: JPG, JPEG, PNG, WEBP.',
+        code: 'formato-invalido',
+      );
+    }
+
+    return _subir(
+      bytes: bytes,
+      nombreArchivo: nombreArchivo,
+      contentType: MediaType('image', subtipo),
+      folder: 'publicaciones',
+    );
+  }
+
+  Future<CloudinarySubida> _subir({
+    required Uint8List bytes,
+    required String nombreArchivo,
+    required MediaType contentType,
+    String? folder,
+  }) async {
     if (bytes.isEmpty) {
       throw const CloudinaryException(
         'El archivo seleccionado está vacío.',
@@ -85,9 +139,12 @@ class CloudinaryService {
               'file',
               bytes,
               filename: nombreArchivo,
-              contentType: MediaType('application', 'pdf'),
+              contentType: contentType,
             ),
           );
+    if (folder != null) {
+      peticion.fields['folder'] = folder;
+    }
 
     http.StreamedResponse enviada;
     try {
@@ -138,7 +195,7 @@ class CloudinaryService {
       secureUrl: secureUrl,
       publicId: publicId,
       bytes: (datos['bytes'] as num?)?.toInt() ?? bytes.length,
-      formato: (datos['format'] as String?) ?? 'pdf',
+      formato: (datos['format'] as String?) ?? contentType.subtype,
     );
   }
 
