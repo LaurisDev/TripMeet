@@ -65,6 +65,10 @@ class CloudinaryService {
   /// Sube [bytes] (debe corresponder a un archivo `.pdf`) con nombre
   /// [nombreArchivo] y devuelve la URL segura generada por Cloudinary.
   ///
+  /// Se guarda en `tripmeet/certificados`. Si el upload preset tiene la
+  /// carpeta fija ("Folder") en el dashboard de Cloudinary, este campo se
+  /// ignora y el archivo cae en la carpeta que diga el preset.
+  ///
   /// Lanza [CloudinaryException] con un mensaje listo para mostrar en la UI
   /// si el archivo no es PDF, si falla la conexión o si Cloudinary rechaza
   /// la subida.
@@ -83,6 +87,7 @@ class CloudinaryService {
       bytes: bytes,
       nombreArchivo: nombreArchivo,
       contentType: MediaType('application', 'pdf'),
+      folder: 'tripmeet/certificados',
     );
   }
 
@@ -90,9 +95,9 @@ class CloudinaryService {
   /// una publicación del turista y devuelve la URL segura generada por
   /// Cloudinary.
   ///
-  /// Se guarda en la carpeta `publicaciones` de Cloudinary para no mezclarla
-  /// con los certificados de guías. Si el upload preset tiene la carpeta fija
-  /// en el dashboard, este campo simplemente se ignora.
+  /// Se guarda en `tripmeet/publicaciones` para no mezclarla con los
+  /// certificados de guías. Si el upload preset tiene la carpeta fija en el
+  /// dashboard, este campo simplemente se ignora.
   ///
   /// Lanza [CloudinaryException] con un mensaje listo para mostrar en la UI
   /// si el archivo no es una imagen soportada, si falla la conexión o si
@@ -114,7 +119,7 @@ class CloudinaryService {
       bytes: bytes,
       nombreArchivo: nombreArchivo,
       contentType: MediaType('image', subtipo),
-      folder: 'publicaciones',
+      folder: 'tripmeet/publicaciones',
     );
   }
 

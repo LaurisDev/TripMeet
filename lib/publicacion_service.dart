@@ -65,7 +65,8 @@ class PublicacionServiceException implements Exception {
 }
 
 /// Gestiona la creación y consulta de publicaciones del turista: sube la foto
-/// a Cloudinary (reutilizando el mismo patrón que los certificados de guías)
+/// a Cloudinary (mismo preset `TripMeet` que los certificados de guías, pero
+/// en la carpeta `tripmeet/publicaciones` en vez de `tripmeet/certificados`)
 /// y guarda el documento en la colección `publicaciones` de Firestore.
 class PublicacionService {
   PublicacionService({
