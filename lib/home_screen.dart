@@ -47,7 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
         icon: const Icon(Icons.smart_toy_outlined),
-        label: const Text('Probar IA'),
+        label: const Text('Asistente IA'),
       ),
       body: pantallas[_indiceActual],
       bottomNavigationBar: Container(
