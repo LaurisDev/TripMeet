@@ -393,8 +393,8 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
                     "${r.fecha.day}/${r.fecha.month}/${r.fecha.year}",
                     style: const TextStyle(color: Colors.grey, fontSize: 12),
                   ),
-                  // HU-15 y HU-16: Botones para editar y borrar (visibles si es propietario o si usuarioId es null en pruebas)
-                  if (esPropietario || r.usuarioId == null)
+                  // HU-15 y HU-16: Botones para editar y borrar (visibles ÚNICAMENTE para el creador de la reseña)
+                  if (esPropietario)
                     Row(
                       children: [
                         IconButton(
