@@ -58,6 +58,7 @@ class LugaresService {
     return lugares;
   }
 
+  /// Obtiene la lista de reseñas asociadas a un lugar.
   Future<List<Resena>> obtenerResenas(String lugarId) async {
     try {
       final snapshot = await _firestore
@@ -72,23 +73,74 @@ class LugaresService {
       rethrow;
     }
   }
+
+  /// HU-14: Crea una nueva reseña en la subcolección de Firestore.
+  Future<void> crearResena(String lugarId, Resena resena) async {
+    try {
+      await _firestore
+          .collection('Lugares')
+          .doc(lugarId)
+          .collection('Reseñas')
+          .add(resena.toFirestore());
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// HU-15: Actualiza una reseña existente en Firestore.
+  Future<void> actualizarResena(
+    String lugarId,
+    String resenaId,
+    Resena resena,
+  ) async {
+    try {
+      await _firestore
+          .collection('Lugares')
+          .doc(lugarId)
+          .collection('Reseñas')
+          .doc(resenaId)
+          .update(resena.toFirestore());
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// HU-16: Elimina una reseña existente en Firestore.
+  Future<void> eliminarResena(String lugarId, String resenaId) async {
+    try {
+      await _firestore
+          .collection('Lugares')
+          .doc(lugarId)
+          .collection('Reseñas')
+          .doc(resenaId)
+          .delete();
+    } catch (e) {
+      rethrow;
+    }
+  }
 }
 
 class Resena {
-  final String nombreUsuario; 
+  final String? id;
+  final String? usuarioId;
+  final String nombreUsuario;
+  final String? fotoUsuario;
   final String comentario;
   final double calificacion;
   final DateTime fecha;
 
   Resena({
+    this.id,
+    this.usuarioId,
     required this.nombreUsuario,
+    this.fotoUsuario,
     required this.comentario,
     required this.calificacion,
     required this.fecha,
   });
 
   factory Resena.fromFirestore(DocumentSnapshot doc) {
-    final datos = doc.data() as Map<String, dynamic>;
+    final datos = doc.data() as Map<String, dynamic>? ?? {};
     
     // --- MEJORA: Detección inteligente de tipos ---
     dynamic cal = datos['calificacion'] ?? 0;
@@ -100,11 +152,25 @@ class Resena {
     }
 
     return Resena(
+      id: doc.id,
+      usuarioId: datos['usuarioId']?.toString(),
       nombreUsuario: datos['nombreUsuario']?.toString() ?? 'Anónimo',
+      fotoUsuario: datos['fotoUsuario']?.toString(),
       comentario: datos['comentario']?.toString() ?? 'Sin comentario',
       calificacion: calFinal,
       fecha: (datos['fecha'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      if (usuarioId != null) 'usuarioId': usuarioId,
+      'nombreUsuario': nombreUsuario,
+      if (fotoUsuario != null) 'fotoUsuario': fotoUsuario,
+      'comentario': comentario,
+      'calificacion': calificacion,
+      'fecha': Timestamp.fromDate(fecha),
+    };
   }
 }
 
