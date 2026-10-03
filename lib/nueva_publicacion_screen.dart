@@ -45,11 +45,9 @@ class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
       }
 
       final ArchivoLocal archivo = seleccionados.first;
-      if (!_service.esImagenValida(archivo)) {
-        setState(() {
-          _error = 'Formato de imagen no válido. Formatos permitidos: '
-              '${extensionesImagenPermitidas.map((String e) => e.toUpperCase()).join(', ')}.';
-        });
+      final String? errorImagen = PublicacionService.validarImagen(archivo);
+      if (errorImagen != null) {
+        setState(() => _error = errorImagen);
         return;
       }
 

@@ -14,6 +14,9 @@ const List<String> extensionesImagenPermitidas = <String>[
   'webp',
 ];
 
+/// Tamaño máximo permitido para la foto de una publicación (5 MB).
+const int tamanoMaximoImagenBytes = 5 * 1024 * 1024;
+
 /// Publicación de un turista: una foto con descripción opcional, visible en
 /// su propio perfil.
 class Publicacion {
@@ -24,6 +27,8 @@ class Publicacion {
     required this.imagenPublicId,
     required this.fechaCreacion,
     this.descripcion,
+    this.editado = false,
+    this.fechaEdicion,
   });
 
   final String id;
@@ -32,6 +37,12 @@ class Publicacion {
   final String imagenPublicId;
   final String? descripcion;
   final DateTime fechaCreacion;
+
+  /// `true` si el autor modificó la publicación después de crearla.
+  final bool editado;
+
+  /// Fecha de la última edición; `null` si nunca se editó.
+  final DateTime? fechaEdicion;
 
   factory Publicacion.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> documento,
@@ -49,8 +60,53 @@ class Publicacion {
           : descripcion,
       fechaCreacion:
           (datos['fechaCreacion'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      // Las publicaciones creadas antes de existir estos campos no los
+      // tienen: se leen como "no editada".
+      editado: datos['editado'] as bool? ?? false,
+      fechaEdicion: (datos['fechaEdicion'] as Timestamp?)?.toDate(),
     );
   }
+
+  /// Copia con los campos editables reemplazados. [descripcion] es una
+  /// función para poder distinguir "no cambiar" de "dejar en `null`".
+  Publicacion copyWith({
+    String? imagenUrl,
+    String? imagenPublicId,
+    String? Function()? descripcion,
+    bool? editado,
+    DateTime? fechaEdicion,
+  }) {
+    return Publicacion(
+      id: id,
+      uid: uid,
+      imagenUrl: imagenUrl ?? this.imagenUrl,
+      imagenPublicId: imagenPublicId ?? this.imagenPublicId,
+      descripcion: descripcion != null ? descripcion() : this.descripcion,
+      fechaCreacion: fechaCreacion,
+      editado: editado ?? this.editado,
+      fechaEdicion: fechaEdicion ?? this.fechaEdicion,
+    );
+  }
+}
+
+/// Cambios reales que una edición aplica sobre una publicación, ya
+/// validados por [PublicacionService.validarEdicion].
+class EdicionPublicacion {
+  const EdicionPublicacion({
+    required this.actual,
+    required this.cambiaDescripcion,
+    this.descripcion,
+    this.nuevaImagen,
+  });
+
+  final Publicacion actual;
+  final bool cambiaDescripcion;
+
+  /// Descripción normalizada (sin espacios sobrantes; `null` si quedó vacía).
+  final String? descripcion;
+  final ArchivoLocal? nuevaImagen;
+
+  bool get hayCambios => cambiaDescripcion || nuevaImagen != null;
 }
 
 /// Excepción de dominio con un mensaje seguro para mostrar en la interfaz.
@@ -83,20 +139,87 @@ class PublicacionService {
 
   /// Valida que [archivo] sea una imagen soportada, revisando tanto su
   /// extensión como la firma binaria real del archivo (no solo el nombre).
-  bool esImagenValida(ArchivoLocal archivo) =>
-      _formatoImagenValido(archivo.bytes, archivo.extension);
+  bool esImagenValida(ArchivoLocal archivo) => validarImagen(archivo) == null;
+
+  /// Devuelve el mensaje de error de [archivo] si no cumple las reglas de
+  /// imagen (formato y tamaño máximo), o `null` si es válida.
+  static String? validarImagen(ArchivoLocal archivo) {
+    if (!_formatoImagenValido(archivo.bytes, archivo.extension)) {
+      return 'Formato de imagen no válido. Formatos permitidos: '
+          '${extensionesImagenPermitidas.map((String e) => e.toUpperCase()).join(', ')}.';
+    }
+    if (archivo.tamano > tamanoMaximoImagenBytes) {
+      return 'La imagen supera el tamaño máximo de '
+          '${tamanoMaximoImagenBytes ~/ (1024 * 1024)} MB.';
+    }
+    return null;
+  }
+
+  /// Quita espacios sobrantes y convierte una descripción vacía en `null`,
+  /// igual que al crear la publicación.
+  static String? normalizarDescripcion(String? descripcion) {
+    final String? limpia = descripcion?.trim();
+    return (limpia == null || limpia.isEmpty) ? null : limpia;
+  }
+
+  /// Reglas de negocio de la edición, sin tocar Firestore ni Cloudinary:
+  ///
+  /// - [uidUsuario] `null` → `user-not-authenticated`.
+  /// - [actual] `null` → la publicación no existe (`not-found`, el "404").
+  /// - [uidUsuario] distinto del autor → `permission-denied` (el "403").
+  /// - [nuevaImagen] debe cumplir las mismas reglas que al crear.
+  ///
+  /// Devuelve qué cambia realmente respecto al contenido original; si nada
+  /// cambia, [EdicionPublicacion.hayCambios] es `false` y la publicación no
+  /// debe marcarse como editada.
+  static EdicionPublicacion validarEdicion({
+    required Publicacion? actual,
+    required String? uidUsuario,
+    required String? descripcion,
+    ArchivoLocal? nuevaImagen,
+  }) {
+    if (uidUsuario == null) {
+      throw const PublicacionServiceException(
+        'No hay un usuario autenticado para editar la publicación.',
+        code: 'user-not-authenticated',
+      );
+    }
+    if (actual == null) {
+      throw const PublicacionServiceException(
+        'La publicación ya no existe.',
+        code: 'not-found',
+      );
+    }
+    if (actual.uid != uidUsuario) {
+      throw const PublicacionServiceException(
+        'Solo el autor puede editar esta publicación.',
+        code: 'permission-denied',
+      );
+    }
+    if (nuevaImagen != null) {
+      final String? errorImagen = validarImagen(nuevaImagen);
+      if (errorImagen != null) {
+        throw PublicacionServiceException(errorImagen, code: 'imagen-invalida');
+      }
+    }
+
+    final String? nuevaDescripcion = normalizarDescripcion(descripcion);
+    return EdicionPublicacion(
+      actual: actual,
+      cambiaDescripcion: nuevaDescripcion != actual.descripcion,
+      descripcion: nuevaDescripcion,
+      nuevaImagen: nuevaImagen,
+    );
+  }
 
   /// Sube la foto de una publicación a Cloudinary.
   ///
   /// Lanza [PublicacionServiceException] si el archivo no es una imagen
   /// válida o si falla la subida.
   Future<CloudinarySubida> subirImagen(ArchivoLocal imagen) async {
-    if (!esImagenValida(imagen)) {
-      throw PublicacionServiceException(
-        'Formato de imagen no válido. Formatos permitidos: '
-        '${extensionesImagenPermitidas.map((String e) => e.toUpperCase()).join(', ')}.',
-        code: 'formato-invalido',
-      );
+    final String? errorImagen = validarImagen(imagen);
+    if (errorImagen != null) {
+      throw PublicacionServiceException(errorImagen, code: 'imagen-invalida');
     }
 
     try {
@@ -138,6 +261,8 @@ class PublicacionService {
                 ? null
                 : descripcion.trim(),
         'fechaCreacion': Timestamp.now(),
+        'editado': false,
+        'fechaEdicion': null,
       });
     } on FirebaseException catch (error) {
       throw PublicacionServiceException(
@@ -150,6 +275,74 @@ class PublicacionService {
         code: 'publicacion-fallida',
       );
     }
+  }
+
+  /// Edita la publicación [publicacionId] del usuario autenticado: cambia la
+  /// descripción y/o reemplaza la foto por [nuevaImagen].
+  ///
+  /// Lee el documento actual del servidor para validar que exista y que el
+  /// usuario sea su autor (ver [validarEdicion]); las reglas de Firestore
+  /// repiten esa validación del lado del servidor. Si no hay cambios reales
+  /// no escribe nada y devuelve la publicación tal cual; si los hay, marca
+  /// `editado = true` y registra `fechaEdicion`.
+  ///
+  /// La foto anterior no se borra de Cloudinary (borrar exige la API secret,
+  /// que no puede vivir en la app): solo deja de referenciarse.
+  Future<Publicacion> editarPublicacion({
+    required String publicacionId,
+    String? descripcion,
+    ArchivoLocal? nuevaImagen,
+  }) async {
+    final DocumentReference<Map<String, dynamic>> documento =
+        _firestore.collection('publicaciones').doc(publicacionId);
+
+    final EdicionPublicacion edicion;
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> snapshot =
+          await documento.get();
+      edicion = validarEdicion(
+        actual: snapshot.exists ? Publicacion.fromFirestore(snapshot) : null,
+        uidUsuario: _auth.currentUser?.uid,
+        descripcion: descripcion,
+        nuevaImagen: nuevaImagen,
+      );
+    } on FirebaseException catch (error) {
+      throw PublicacionServiceException(
+        _mensajeParaErrorDeFirestore(error.code),
+        code: error.code,
+      );
+    }
+
+    if (!edicion.hayCambios) {
+      return edicion.actual;
+    }
+
+    final CloudinarySubida? subida =
+        nuevaImagen == null ? null : await subirImagen(nuevaImagen);
+    final Timestamp fechaEdicion = Timestamp.now();
+
+    try {
+      await documento.update(<String, dynamic>{
+        if (edicion.cambiaDescripcion) 'descripcion': edicion.descripcion,
+        if (subida != null) 'imagenUrl': subida.secureUrl,
+        if (subida != null) 'imagenPublicId': subida.publicId,
+        'editado': true,
+        'fechaEdicion': fechaEdicion,
+      });
+    } on FirebaseException catch (error) {
+      throw PublicacionServiceException(
+        _mensajeParaErrorDeFirestore(error.code),
+        code: error.code,
+      );
+    }
+
+    return edicion.actual.copyWith(
+      imagenUrl: subida?.secureUrl,
+      imagenPublicId: subida?.publicId,
+      descripcion: () => edicion.descripcion,
+      editado: true,
+      fechaEdicion: fechaEdicion.toDate(),
+    );
   }
 
   /// Consulta las publicaciones de [uid], de la más reciente a la más
@@ -178,6 +371,8 @@ class PublicacionService {
         return 'No se pudo completar la operación por un problema de conexión.';
       case 'permission-denied':
         return 'No tienes permiso para realizar esta acción.';
+      case 'not-found':
+        return 'La publicación ya no existe.';
       case 'failed-precondition':
         return 'No se pudieron cargar las publicaciones. Inténtalo de nuevo en unos minutos.';
       default:
@@ -185,7 +380,7 @@ class PublicacionService {
     }
   }
 
-  bool _formatoImagenValido(Uint8List bytes, String extension) {
+  static bool _formatoImagenValido(Uint8List bytes, String extension) {
     if (!extensionesImagenPermitidas.contains(extension.toLowerCase())) {
       return false;
     }
