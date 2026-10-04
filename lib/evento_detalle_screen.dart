@@ -39,26 +39,27 @@ String formatearCupoEvento(int cupo) =>
 /// "\$50.000 COP" con puntos de miles; "Gratis" si es 0.
 String formatearPrecioEvento(int precio) {
   if (precio == 0) return 'Gratis';
+
   final String digitos = precio.toString();
   final StringBuffer conPuntos = StringBuffer();
+
   for (int i = 0; i < digitos.length; i++) {
-    if (i > 0 && (digitos.length - i) % 3 == 0) conPuntos.write('.');
+    if (i > 0 && (digitos.length - i) % 3 == 0) {
+      conPuntos.write('.');
+    }
     conPuntos.write(digitos[i]);
   }
+
   return '\$$conPuntos COP';
 }
 
-/// Abre [enlace] fuera de la app (nueva pestaÃ±a en web, visor del sistema en
-/// mÃ³vil). Devuelve `false` si no se pudo abrir.
+/// Abre [enlace] fuera de la app.
 typedef AbrirEnlace = Future<bool> Function(Uri enlace);
 
 Future<bool> _abrirEnlaceExterno(Uri enlace) =>
     launchUrl(enlace, mode: LaunchMode.externalApplication);
 
-/// Detalle de un evento: imagen (si tiene), nombre, lugar, fecha y hora, y
-/// descripciÃ³n. Se abre al tocar un evento en la secciÃ³n "Eventos". Si lo
-/// creÃ³ un guÃa turÃstico, muestra el recuadro amarillo "Experiencia
-/// premium" y, solo si sus certificados estÃ¡n aprobados, su carnÃ© de guÃa.
+/// Detalle de un evento.
 class EventoDetalleScreen extends StatefulWidget {
   const EventoDetalleScreen({
     required this.evento,
@@ -99,18 +100,32 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     }
   }
 
+  /// Obtiene el UID del usuario autenticado.
+  ///
+  /// En la aplicación normal consulta Firebase Authentication.
+  /// En los tests, si Firebase todavía no fue inicializado, devuelve null
+  /// para evitar que la pantalla falle.
+  String? _obtenerUidUsuarioActual() {
+    try {
+      return FirebaseAuth.instance.currentUser?.uid;
+    } on FirebaseException {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final Evento evento = _evento;
     final String? imagenUrl = evento.imagenUrl;
     final CertificadoGuia? certificado = evento.certificadoGuia;
+    final String? usuarioActualUid = _obtenerUidUsuarioActual();
 
     return Scaffold(
       backgroundColor: AppTheme.crema,
       appBar: AppBar(
         title: const Text('Evento'),
         actions: <Widget>[
-          if (FirebaseAuth.instance.currentUser?.uid == evento.creadorUid)
+          if (usuarioActualUid == evento.creadorUid)
             IconButton(
               key: const Key('editar-evento'),
               tooltip: 'Editar evento',
@@ -141,12 +156,19 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
                     runSpacing: FormStyles.s8,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: <Widget>[
-                      Text(evento.nombre, style: FormStyles.titulo()),
-                      if (evento.creadoPorGuia) const EtiquetaPremium(),
+                      Text(
+                        evento.nombre,
+                        style: FormStyles.titulo(),
+                      ),
+                      if (evento.creadoPorGuia)
+                        const EtiquetaPremium(),
                     ],
                   ),
                   const SizedBox(height: FormStyles.s16),
-                  DatoEvento(icono: Icons.place_outlined, texto: evento.lugar),
+                  DatoEvento(
+                    icono: Icons.place_outlined,
+                    texto: evento.lugar,
+                  ),
                   const SizedBox(height: FormStyles.s8),
                   DatoEvento(
                     icono: Icons.calendar_today_rounded,
@@ -162,14 +184,15 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
                     DatoEvento(
                       icono: Icons.group_outlined,
                       texto:
-                          'Cupo mÃ¡ximo: ${formatearCupoEvento(evento.cupoMaximo!)}',
+                          'Cupo máximo: ${formatearCupoEvento(evento.cupoMaximo!)}',
                     ),
                   ],
                   if (evento.precio != null) ...<Widget>[
                     const SizedBox(height: FormStyles.s8),
                     DatoEvento(
                       icono: Icons.payments_outlined,
-                      texto: 'Precio: ${formatearPrecioEvento(evento.precio!)}',
+                      texto:
+                          'Precio: ${formatearPrecioEvento(evento.precio!)}',
                     ),
                   ],
                   if (evento.creadoPorGuia) ...<Widget>[
@@ -185,10 +208,13 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
                     ),
                   ],
                   const SizedBox(height: FormStyles.s20),
-                  Text('DescripciÃ³n', style: FormStyles.etiqueta()),
+                  Text(
+                    'Descripción',
+                    style: FormStyles.etiqueta(),
+                  ),
                   const SizedBox(height: FormStyles.s8),
                   Text(
-                    evento.descripcion ?? 'Sin descripciÃ³n.',
+                    evento.descripcion ?? 'Sin descripción.',
                     style: evento.descripcion == null
                         ? FormStyles.ayuda()
                         : FormStyles.subtitulo(),
@@ -203,8 +229,7 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
   }
 }
 
-/// CarnÃ© aprobado del guÃa dentro del recuadro premium, con un botÃ³n para
-/// abrir el PDF.
+/// Carné aprobado del guía dentro del recuadro premium.
 class _CertificadoDelGuia extends StatelessWidget {
   const _CertificadoDelGuia({
     required this.certificado,
@@ -217,15 +242,17 @@ class _CertificadoDelGuia extends StatelessWidget {
   Future<void> _abrir(BuildContext context) async {
     final ScaffoldMessengerState mensajes = ScaffoldMessenger.of(context);
     bool abierto;
+
     try {
       abierto = await abrirEnlace(Uri.parse(certificado.url));
     } catch (_) {
       abierto = false;
     }
+
     if (!abierto) {
       mensajes.showSnackBar(
         const SnackBar(
-          content: Text('No se pudo abrir el certificado. IntÃ©ntalo de nuevo.'),
+          content: Text('No se pudo abrir el certificado. Inténtalo de nuevo.'),
         ),
       );
     }
@@ -258,7 +285,7 @@ class _CertificadoDelGuia extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'CarnÃ© de guÃa turÃstico',
+                      'Carné de guía turístico',
                       style: FormStyles.cuerpo(
                         weight: FontWeight.w700,
                         color: AppTheme.azulPetroleo,
@@ -266,7 +293,7 @@ class _CertificadoDelGuia extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Certificado aprobado Â· ${certificado.nombre}',
+                      'Certificado aprobado · ${certificado.nombre}',
                       style: FormStyles.ayuda(),
                     ),
                   ],
@@ -278,7 +305,10 @@ class _CertificadoDelGuia extends StatelessWidget {
           OutlinedButton.icon(
             style: FormStyles.botonSecundario(),
             onPressed: () => _abrir(context),
-            icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
+            icon: const Icon(
+              Icons.picture_as_pdf_outlined,
+              size: 18,
+            ),
             label: const Text('Ver certificado'),
           ),
         ],
@@ -287,7 +317,7 @@ class _CertificadoDelGuia extends StatelessWidget {
   }
 }
 
-/// Fila "Ãcono + texto" para los datos de un evento (lugar, fecha, hora).
+/// Fila "ícono + texto" para los datos de un evento.
 class DatoEvento extends StatelessWidget {
   const DatoEvento({
     required this.icono,
@@ -299,19 +329,26 @@ class DatoEvento extends StatelessWidget {
   final IconData icono;
   final String texto;
 
-  /// Color del Ãcono y del texto.
+  /// Color del ícono y del texto.
   final Color color;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        Icon(icono, size: 16, color: color),
+        Icon(
+          icono,
+          size: 16,
+          color: color,
+        ),
         const SizedBox(width: FormStyles.s8),
         Expanded(
           child: Text(
             texto,
-            style: FormStyles.cuerpo(weight: FontWeight.w600, color: color),
+            style: FormStyles.cuerpo(
+              weight: FontWeight.w600,
+              color: color,
+            ),
           ),
         ),
       ],
@@ -319,10 +356,12 @@ class DatoEvento extends StatelessWidget {
   }
 }
 
-/// Foto de un evento desde Cloudinary, con indicador de carga y un Ãcono si
-/// la imagen no se puede mostrar.
+/// Foto de un evento desde Cloudinary.
 class ImagenEvento extends StatelessWidget {
-  const ImagenEvento({required this.url, super.key});
+  const ImagenEvento({
+    required this.url,
+    super.key,
+  });
 
   final String url;
 
@@ -333,24 +372,25 @@ class ImagenEvento extends StatelessWidget {
       fit: BoxFit.cover,
       loadingBuilder:
           (BuildContext context, Widget child, ImageChunkEvent? progress) {
-            if (progress == null) return child;
-            return Container(
-              color: Colors.white,
-              child: const Center(
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            );
-          },
+        if (progress == null) return child;
+
+        return Container(
+          color: Colors.white,
+          child: const Center(
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        );
+      },
       errorBuilder:
           (BuildContext context, Object error, StackTrace? stackTrace) =>
               Container(
-                color: Colors.white,
-                child: Icon(
-                  Icons.broken_image_outlined,
-                  size: 48,
-                  color: AppTheme.textoSuave.withValues(alpha: 0.4),
-                ),
-              ),
+        color: Colors.white,
+        child: Icon(
+          Icons.broken_image_outlined,
+          size: 48,
+          color: AppTheme.textoSuave.withValues(alpha: 0.4),
+        ),
+      ),
     );
   }
 }
