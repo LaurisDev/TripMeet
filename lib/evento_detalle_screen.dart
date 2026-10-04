@@ -1,7 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_theme.dart';
+import 'editar_evento_screen.dart';
 import 'evento_service.dart';
 import 'form_styles.dart';
 import 'widgets/evento_guia_estilo.dart';
@@ -46,18 +48,18 @@ String formatearPrecioEvento(int precio) {
   return '\$$conPuntos COP';
 }
 
-/// Abre [enlace] fuera de la app (nueva pestaña en web, visor del sistema en
-/// móvil). Devuelve `false` si no se pudo abrir.
+/// Abre [enlace] fuera de la app (nueva pestaÃ±a en web, visor del sistema en
+/// mÃ³vil). Devuelve `false` si no se pudo abrir.
 typedef AbrirEnlace = Future<bool> Function(Uri enlace);
 
 Future<bool> _abrirEnlaceExterno(Uri enlace) =>
     launchUrl(enlace, mode: LaunchMode.externalApplication);
 
 /// Detalle de un evento: imagen (si tiene), nombre, lugar, fecha y hora, y
-/// descripción. Se abre al tocar un evento en la sección "Eventos". Si lo
-/// creó un guía turístico, muestra el recuadro amarillo "Experiencia
-/// premium" y, solo si sus certificados están aprobados, su carné de guía.
-class EventoDetalleScreen extends StatelessWidget {
+/// descripciÃ³n. Se abre al tocar un evento en la secciÃ³n "Eventos". Si lo
+/// creÃ³ un guÃa turÃstico, muestra el recuadro amarillo "Experiencia
+/// premium" y, solo si sus certificados estÃ¡n aprobados, su carnÃ© de guÃa.
+class EventoDetalleScreen extends StatefulWidget {
   const EventoDetalleScreen({
     required this.evento,
     this.abrirEnlace = _abrirEnlaceExterno,
@@ -70,13 +72,53 @@ class EventoDetalleScreen extends StatelessWidget {
   final AbrirEnlace abrirEnlace;
 
   @override
+  State<EventoDetalleScreen> createState() => _EventoDetalleScreenState();
+}
+
+class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
+  late Evento _evento;
+
+  @override
+  void initState() {
+    super.initState();
+    _evento = widget.evento;
+  }
+
+  Future<void> _editarEvento() async {
+    final Evento? eventoActualizado = await Navigator.push<Evento>(
+      context,
+      MaterialPageRoute<Evento>(
+        builder: (_) => EditarEventoScreen(evento: _evento),
+      ),
+    );
+
+    if (eventoActualizado != null && mounted) {
+      setState(() {
+        _evento = eventoActualizado;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final Evento evento = _evento;
     final String? imagenUrl = evento.imagenUrl;
     final CertificadoGuia? certificado = evento.certificadoGuia;
 
     return Scaffold(
       backgroundColor: AppTheme.crema,
-      appBar: AppBar(title: const Text('Evento')),
+      appBar: AppBar(
+        title: const Text('Evento'),
+        actions: <Widget>[
+          if (FirebaseAuth.instance.currentUser?.uid == evento.creadorUid)
+            IconButton(
+              key: const Key('editar-evento'),
+              tooltip: 'Editar evento',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: _editarEvento,
+            ),
+        ],
+      ),
       body: SafeArea(
         child: ListView(
           padding: EdgeInsets.zero,
@@ -120,7 +162,7 @@ class EventoDetalleScreen extends StatelessWidget {
                     DatoEvento(
                       icono: Icons.group_outlined,
                       texto:
-                          'Cupo máximo: ${formatearCupoEvento(evento.cupoMaximo!)}',
+                          'Cupo mÃ¡ximo: ${formatearCupoEvento(evento.cupoMaximo!)}',
                     ),
                   ],
                   if (evento.precio != null) ...<Widget>[
@@ -138,15 +180,15 @@ class EventoDetalleScreen extends StatelessWidget {
                           ? null
                           : _CertificadoDelGuia(
                               certificado: certificado,
-                              abrirEnlace: abrirEnlace,
+                              abrirEnlace: widget.abrirEnlace,
                             ),
                     ),
                   ],
                   const SizedBox(height: FormStyles.s20),
-                  Text('Descripción', style: FormStyles.etiqueta()),
+                  Text('DescripciÃ³n', style: FormStyles.etiqueta()),
                   const SizedBox(height: FormStyles.s8),
                   Text(
-                    evento.descripcion ?? 'Sin descripción.',
+                    evento.descripcion ?? 'Sin descripciÃ³n.',
                     style: evento.descripcion == null
                         ? FormStyles.ayuda()
                         : FormStyles.subtitulo(),
@@ -161,7 +203,7 @@ class EventoDetalleScreen extends StatelessWidget {
   }
 }
 
-/// Carné aprobado del guía dentro del recuadro premium, con un botón para
+/// CarnÃ© aprobado del guÃa dentro del recuadro premium, con un botÃ³n para
 /// abrir el PDF.
 class _CertificadoDelGuia extends StatelessWidget {
   const _CertificadoDelGuia({
@@ -183,7 +225,7 @@ class _CertificadoDelGuia extends StatelessWidget {
     if (!abierto) {
       mensajes.showSnackBar(
         const SnackBar(
-          content: Text('No se pudo abrir el certificado. Inténtalo de nuevo.'),
+          content: Text('No se pudo abrir el certificado. IntÃ©ntalo de nuevo.'),
         ),
       );
     }
@@ -216,7 +258,7 @@ class _CertificadoDelGuia extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     Text(
-                      'Carné de guía turístico',
+                      'CarnÃ© de guÃa turÃstico',
                       style: FormStyles.cuerpo(
                         weight: FontWeight.w700,
                         color: AppTheme.azulPetroleo,
@@ -224,7 +266,7 @@ class _CertificadoDelGuia extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Certificado aprobado · ${certificado.nombre}',
+                      'Certificado aprobado Â· ${certificado.nombre}',
                       style: FormStyles.ayuda(),
                     ),
                   ],
@@ -245,7 +287,7 @@ class _CertificadoDelGuia extends StatelessWidget {
   }
 }
 
-/// Fila "ícono + texto" para los datos de un evento (lugar, fecha, hora).
+/// Fila "Ãcono + texto" para los datos de un evento (lugar, fecha, hora).
 class DatoEvento extends StatelessWidget {
   const DatoEvento({
     required this.icono,
@@ -257,7 +299,7 @@ class DatoEvento extends StatelessWidget {
   final IconData icono;
   final String texto;
 
-  /// Color del ícono y del texto.
+  /// Color del Ãcono y del texto.
   final Color color;
 
   @override
@@ -277,7 +319,7 @@ class DatoEvento extends StatelessWidget {
   }
 }
 
-/// Foto de un evento desde Cloudinary, con indicador de carga y un ícono si
+/// Foto de un evento desde Cloudinary, con indicador de carga y un Ãcono si
 /// la imagen no se puede mostrar.
 class ImagenEvento extends StatelessWidget {
   const ImagenEvento({required this.url, super.key});
