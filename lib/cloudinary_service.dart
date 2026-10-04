@@ -95,8 +95,9 @@ class CloudinaryService {
   /// una publicación del turista y devuelve la URL segura generada por
   /// Cloudinary.
   ///
-  /// Se guarda en `tripmeet/publicaciones` para no mezclarla con los
-  /// certificados de guías. Si el upload preset tiene la carpeta fija en el
+  /// Se guarda en [folder] (por defecto `tripmeet/publicaciones`) para no
+  /// mezclarla con los certificados de guías; los eventos usan
+  /// `tripmeet/eventos`. Si el upload preset tiene la carpeta fija en el
   /// dashboard, este campo simplemente se ignora.
   ///
   /// Lanza [CloudinaryException] con un mensaje listo para mostrar en la UI
@@ -105,6 +106,7 @@ class CloudinaryService {
   Future<CloudinarySubida> subirImagen({
     required Uint8List bytes,
     required String nombreArchivo,
+    String folder = 'tripmeet/publicaciones',
   }) async {
     final String extension = nombreArchivo.toLowerCase().trim().split('.').last;
     final String? subtipo = _subtiposDeImagen[extension];
@@ -119,7 +121,7 @@ class CloudinaryService {
       bytes: bytes,
       nombreArchivo: nombreArchivo,
       contentType: MediaType('image', subtipo),
-      folder: 'tripmeet/publicaciones',
+      folder: folder,
     );
   }
 

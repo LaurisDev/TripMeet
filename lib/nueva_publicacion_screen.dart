@@ -7,6 +7,7 @@ import 'guia_service.dart' show ArchivoLocal;
 import 'publicacion_service.dart';
 import 'widgets/archivo_picker.dart';
 import 'widgets/aviso_error.dart';
+import 'widgets/foto_seleccionada.dart';
 
 /// Pantalla para crear una publicación: elegir foto (obligatoria), escribir
 /// una descripción (opcional) y publicar. Se abre desde el Perfil del
@@ -91,7 +92,7 @@ class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
         child: ListView(
           padding: const EdgeInsets.all(FormStyles.s20),
           children: <Widget>[
-            _FotoSeleccionada(
+            FotoSeleccionada(
               imagen: _imagen,
               habilitado: !_publicando,
               onTap: _seleccionarImagen,
@@ -126,92 +127,6 @@ class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
                   : const Text('Publicar'),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _FotoSeleccionada extends StatelessWidget {
-  const _FotoSeleccionada({
-    required this.imagen,
-    required this.habilitado,
-    required this.onTap,
-  });
-
-  final ArchivoLocal? imagen;
-  final bool habilitado;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: habilitado ? onTap : null,
-      borderRadius: BorderRadius.circular(FormStyles.radioTarjeta),
-      child: AspectRatio(
-        aspectRatio: 1,
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(FormStyles.radioTarjeta),
-            border: Border.all(color: FormStyles.colorBorde),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: imagen == null
-              ? Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: <Widget>[
-                    const Icon(
-                      Icons.add_a_photo_outlined,
-                      size: 40,
-                      color: AppTheme.azulPetroleo,
-                    ),
-                    const SizedBox(height: FormStyles.s8),
-                    Text(
-                      'Toca para seleccionar una foto',
-                      style: FormStyles.cuerpo(
-                        weight: FontWeight.w600,
-                        color: AppTheme.azulPetroleo,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'JPG, JPEG, PNG o WEBP',
-                      style: FormStyles.ayuda(),
-                    ),
-                  ],
-                )
-              : Stack(
-                  fit: StackFit.expand,
-                  children: <Widget>[
-                    Image.memory(imagen!.bytes, fit: BoxFit.cover),
-                    Positioned(
-                      right: FormStyles.s8,
-                      bottom: FormStyles.s8,
-                      child: Material(
-                        color: Colors.black.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(FormStyles.radioPill),
-                        child: const Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: FormStyles.s12,
-                            vertical: FormStyles.s8,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Icon(Icons.autorenew_rounded, size: 16, color: Colors.white),
-                              SizedBox(width: FormStyles.s4),
-                              Text(
-                                'Cambiar foto',
-                                style: TextStyle(color: Colors.white, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
         ),
       ),
     );
