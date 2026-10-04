@@ -1,6 +1,10 @@
 import 'dart:typed_data';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
+import 'package:firebase_auth_mocks/firebase_auth_mocks.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mock_exceptions/mock_exceptions.dart';
 import 'package:tripmeet/guia_service.dart' show ArchivoLocal;
 import 'package:tripmeet/publicacion_service.dart';
 
@@ -161,6 +165,149 @@ void main() {
     test('rechaza una extensión no permitida', () {
       expect(PublicacionService.validarImagen(_png(extension: 'gif')),
           isNotNull);
+    });
+  });
+
+  group('PublicacionService.validarAutoria (eliminar)', () {
+    test('el autor puede eliminar su publicación', () {
+      final Publicacion actual = _publicacion();
+
+      expect(
+        PublicacionService.validarAutoria(
+          actual: actual,
+          uidUsuario: 'autor-123',
+          accion: 'eliminar',
+        ),
+        same(actual),
+      );
+    });
+
+    test('un usuario que no es el autor no puede eliminar (403)', () {
+      expect(
+        () => PublicacionService.validarAutoria(
+          actual: _publicacion(),
+          uidUsuario: 'otro-usuario',
+          accion: 'eliminar',
+        ),
+        _lanzaCodigo('permission-denied'),
+      );
+    });
+
+    test('una publicación inexistente no se puede eliminar (404)', () {
+      expect(
+        () => PublicacionService.validarAutoria(
+          actual: null,
+          uidUsuario: 'autor-123',
+          accion: 'eliminar',
+        ),
+        _lanzaCodigo('not-found'),
+      );
+    });
+
+    test('sin sesión iniciada no se puede eliminar', () {
+      expect(
+        () => PublicacionService.validarAutoria(
+          actual: _publicacion(),
+          uidUsuario: null,
+          accion: 'eliminar',
+        ),
+        _lanzaCodigo('user-not-authenticated'),
+      );
+    });
+  });
+
+  group('PublicacionService.eliminarPublicacion (Firestore simulado)', () {
+    late FakeFirebaseFirestore firestore;
+
+    PublicacionService servicio({String? uid = 'autor-123'}) =>
+        PublicacionService(
+          auth: MockFirebaseAuth(
+            signedIn: uid != null,
+            mockUser: MockUser(uid: uid ?? 'sin-sesion'),
+          ),
+          firestore: firestore,
+        );
+
+    Future<void> guardar(String id, String uid, DateTime fecha) =>
+        firestore.collection('publicaciones').doc(id).set(<String, dynamic>{
+          'id': id,
+          'uid': uid,
+          'imagenUrl': 'https://res.cloudinary.com/demo/$id.jpg',
+          'imagenPublicId': 'tripmeet/publicaciones/$id',
+          'descripcion': 'Foto $id',
+          'fechaCreacion': Timestamp.fromDate(fecha),
+          'editado': false,
+          'fechaEdicion': null,
+        });
+
+    Future<bool> existe(String id) async =>
+        (await firestore.collection('publicaciones').doc(id).get()).exists;
+
+    setUp(() async {
+      firestore = FakeFirebaseFirestore();
+      await guardar('pub-1', 'autor-123', DateTime(2026, 9, 1));
+      await guardar('pub-2', 'autor-123', DateTime(2026, 9, 2));
+      await guardar('pub-ajena', 'otro-usuario', DateTime(2026, 9, 3));
+    });
+
+    test('el autor elimina su publicación y ya no aparece al consultar',
+        () async {
+      await servicio().eliminarPublicacion('pub-1');
+
+      expect(await existe('pub-1'), isFalse);
+      final List<Publicacion> restantes =
+          await servicio().obtenerPublicacionesDeUsuario('autor-123');
+      expect(
+        restantes.map((Publicacion p) => p.id),
+        <String>['pub-2'],
+        reason: 'la consulta posterior no debe devolver la eliminada',
+      );
+    });
+
+    test('no elimina una publicación de otro usuario', () async {
+      await expectLater(
+        servicio().eliminarPublicacion('pub-ajena'),
+        _lanzaCodigo('permission-denied'),
+      );
+
+      expect(await existe('pub-ajena'), isTrue);
+    });
+
+    test('sin sesión iniciada no elimina nada', () async {
+      await expectLater(
+        servicio(uid: null).eliminarPublicacion('pub-1'),
+        _lanzaCodigo('user-not-authenticated'),
+      );
+
+      expect(await existe('pub-1'), isTrue);
+    });
+
+    test('una publicación que ya no existe informa not-found', () async {
+      await expectLater(
+        servicio().eliminarPublicacion('no-existe'),
+        _lanzaCodigo('not-found'),
+      );
+    });
+
+    test('si Firestore falla, informa el error y la publicación se conserva',
+        () async {
+      final DocumentReference<Map<String, dynamic>> documento =
+          firestore.collection('publicaciones').doc('pub-1');
+      whenCalling(Invocation.method(#delete, null))
+          .on(documento)
+          .thenThrow(FirebaseException(plugin: 'firestore', code: 'unavailable'));
+
+      await expectLater(
+        servicio().eliminarPublicacion('pub-1'),
+        throwsA(
+          isA<PublicacionServiceException>()
+              .having((PublicacionServiceException e) => e.code, 'code',
+                  'unavailable')
+              .having((PublicacionServiceException e) => e.message, 'message',
+                  contains('conexión')),
+        ),
+      );
+      expect(await existe('pub-1'), isTrue);
     });
   });
 }

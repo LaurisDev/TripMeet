@@ -120,7 +120,8 @@ class PublicacionServiceException implements Exception {
   String toString() => message;
 }
 
-/// Gestiona la creación y consulta de publicaciones del turista: sube la foto
+/// Gestiona la creación, consulta, edición y eliminación de publicaciones del
+/// turista: sube la foto
 /// a Cloudinary (mismo preset `TripMeet` que los certificados de guías, pero
 /// en la carpeta `tripmeet/publicaciones` en vez de `tripmeet/certificados`)
 /// y guarda el documento en la colección `publicaciones` de Firestore.
@@ -162,11 +163,43 @@ class PublicacionService {
     return (limpia == null || limpia.isEmpty) ? null : limpia;
   }
 
-  /// Reglas de negocio de la edición, sin tocar Firestore ni Cloudinary:
+  /// Comprueba que [uidUsuario] pueda [accion] (por ejemplo, "editar" o
+  /// "eliminar") la publicación [actual], sin tocar Firestore:
   ///
   /// - [uidUsuario] `null` → `user-not-authenticated`.
   /// - [actual] `null` → la publicación no existe (`not-found`, el "404").
   /// - [uidUsuario] distinto del autor → `permission-denied` (el "403").
+  ///
+  /// Devuelve la publicación ya verificada.
+  static Publicacion validarAutoria({
+    required Publicacion? actual,
+    required String? uidUsuario,
+    required String accion,
+  }) {
+    if (uidUsuario == null) {
+      throw PublicacionServiceException(
+        'No hay un usuario autenticado para $accion la publicación.',
+        code: 'user-not-authenticated',
+      );
+    }
+    if (actual == null) {
+      throw const PublicacionServiceException(
+        'La publicación ya no existe.',
+        code: 'not-found',
+      );
+    }
+    if (actual.uid != uidUsuario) {
+      throw PublicacionServiceException(
+        'Solo el autor puede $accion esta publicación.',
+        code: 'permission-denied',
+      );
+    }
+    return actual;
+  }
+
+  /// Reglas de negocio de la edición, sin tocar Firestore ni Cloudinary:
+  ///
+  /// - El usuario debe ser el autor (ver [validarAutoria]).
   /// - [nuevaImagen] debe cumplir las mismas reglas que al crear.
   ///
   /// Devuelve qué cambia realmente respecto al contenido original; si nada
@@ -178,24 +211,11 @@ class PublicacionService {
     required String? descripcion,
     ArchivoLocal? nuevaImagen,
   }) {
-    if (uidUsuario == null) {
-      throw const PublicacionServiceException(
-        'No hay un usuario autenticado para editar la publicación.',
-        code: 'user-not-authenticated',
-      );
-    }
-    if (actual == null) {
-      throw const PublicacionServiceException(
-        'La publicación ya no existe.',
-        code: 'not-found',
-      );
-    }
-    if (actual.uid != uidUsuario) {
-      throw const PublicacionServiceException(
-        'Solo el autor puede editar esta publicación.',
-        code: 'permission-denied',
-      );
-    }
+    final Publicacion verificada = validarAutoria(
+      actual: actual,
+      uidUsuario: uidUsuario,
+      accion: 'editar',
+    );
     if (nuevaImagen != null) {
       final String? errorImagen = validarImagen(nuevaImagen);
       if (errorImagen != null) {
@@ -205,8 +225,8 @@ class PublicacionService {
 
     final String? nuevaDescripcion = normalizarDescripcion(descripcion);
     return EdicionPublicacion(
-      actual: actual,
-      cambiaDescripcion: nuevaDescripcion != actual.descripcion,
+      actual: verificada,
+      cambiaDescripcion: nuevaDescripcion != verificada.descripcion,
       descripcion: nuevaDescripcion,
       nuevaImagen: nuevaImagen,
     );
@@ -343,6 +363,37 @@ class PublicacionService {
       editado: true,
       fechaEdicion: fechaEdicion.toDate(),
     );
+  }
+
+  /// Elimina permanentemente la publicación [publicacionId] del usuario
+  /// autenticado.
+  ///
+  /// Lee el documento actual del servidor para validar que exista y que el
+  /// usuario sea su autor (ver [validarAutoria]); las reglas de Firestore
+  /// repiten esa validación del lado del servidor. Si algo falla lanza
+  /// [PublicacionServiceException] y el documento queda intacto.
+  ///
+  /// Igual que al editar, la foto no se borra de Cloudinary (borrar exige la
+  /// API secret, que no puede vivir en la app): solo deja de referenciarse.
+  Future<void> eliminarPublicacion(String publicacionId) async {
+    final DocumentReference<Map<String, dynamic>> documento =
+        _firestore.collection('publicaciones').doc(publicacionId);
+
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> snapshot =
+          await documento.get();
+      validarAutoria(
+        actual: snapshot.exists ? Publicacion.fromFirestore(snapshot) : null,
+        uidUsuario: _auth.currentUser?.uid,
+        accion: 'eliminar',
+      );
+      await documento.delete();
+    } on FirebaseException catch (error) {
+      throw PublicacionServiceException(
+        _mensajeParaErrorDeFirestore(error.code),
+        code: error.code,
+      );
+    }
   }
 
   /// Consulta las publicaciones de [uid], de la más reciente a la más

@@ -186,6 +186,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           return _PublicacionMiniatura(
             publicacion: publicacion,
             onActualizada: _reemplazarPublicacion,
+            onEliminada: _quitarPublicacion,
           );
         },
       ),
@@ -202,6 +203,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
           p.id == actualizada.id ? actualizada : p,
       ];
     });
+  }
+
+  /// Quita de la grilla una publicación eliminada sin volver a consultar
+  /// Firestore.
+  void _quitarPublicacion(String id) {
+    if (!mounted) return;
+    setState(() {
+      _publicaciones = <Publicacion>[
+        for (final Publicacion p in _publicaciones)
+          if (p.id != id) p,
+      ];
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Publicación eliminada correctamente.')),
+    );
   }
 }
 
@@ -248,10 +264,12 @@ class _PublicacionMiniatura extends StatelessWidget {
   const _PublicacionMiniatura({
     required this.publicacion,
     required this.onActualizada,
+    required this.onEliminada,
   });
 
   final Publicacion publicacion;
   final ValueChanged<Publicacion> onActualizada;
+  final ValueChanged<String> onEliminada;
 
   @override
   Widget build(BuildContext context) {
@@ -266,6 +284,7 @@ class _PublicacionMiniatura extends StatelessWidget {
               builder: (_) => PublicacionDetalleScreen(
                 publicacion: publicacion,
                 onPublicacionActualizada: onActualizada,
+                onPublicacionEliminada: onEliminada,
               ),
             ),
           );
