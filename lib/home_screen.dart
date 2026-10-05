@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'buscar_lugares_screen.dart';
 import 'eventos_screen.dart';
+import 'feed_publicaciones_screen.dart';
 import 'mapa_exploracion_screen.dart';
 import 'profile_screen.dart';
 import 'test_recommendations_screen.dart';
@@ -28,12 +29,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Inicio (Mapa), Lupa (Explorar), Eventos y Perfil
+    // Inicio (Mapa), Lupa (Explorar), Eventos, Publicaciones y Perfil
     final List<Widget> pantallas = [
       const MapaExploracionScreen(), // Índice 0
       const BuscarLugaresScreen(),    // Índice 1
       const EventosScreen(),    // Índice 2
-      const ProfileScreen(),    // Índice 3
+      const FeedPublicacionesScreen(),    // Índice 3
+      const ProfileScreen(),    // Índice 4
     ];
 
     return Scaffold(
@@ -70,6 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
             BottomNavigationBarItem(icon: Icon(Icons.map_rounded), label: 'Inicio'),
             BottomNavigationBarItem(icon: Icon(Icons.search_rounded), label: 'Explorar'),
             BottomNavigationBarItem(icon: Icon(Icons.event_rounded), label: 'Eventos'),
+            BottomNavigationBarItem(icon: Icon(Icons.dynamic_feed_rounded), label: 'Publicaciones'),
             BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Perfil'),
           ],
         ),

@@ -109,6 +109,97 @@ class EdicionPublicacion {
   bool get hayCambios => cambiaDescripcion || nuevaImagen != null;
 }
 
+/// Autor de una publicación tal como se muestra en el feed, calculado desde
+/// su perfil `usuarios/{uid}` (el proyecto no guarda nombre de usuario).
+class AutorPublicacion {
+  const AutorPublicacion({required this.uid, required this.alias, this.rol});
+
+  final String uid;
+
+  /// Parte del correo antes de la "@" (por ejemplo, `julia` para
+  /// `julia@gmail.com`); "Usuario" si el perfil no tiene correo.
+  final String alias;
+
+  /// "Turista" o "Guía turístico"; `null` si el perfil no tiene un rol
+  /// conocido.
+  final String? rol;
+
+  /// Construye el autor a partir del perfil; [perfil] es `null` si no existe
+  /// o no se pudo leer.
+  factory AutorPublicacion.desdePerfil(
+    String uid,
+    Map<String, dynamic>? perfil,
+  ) {
+    final dynamic rol = perfil?['rol'];
+    final String? rolLimpio = rol is String ? rol.trim() : null;
+    return AutorPublicacion(
+      uid: uid,
+      alias: aliasDesdeCorreo(perfil?['correo']),
+      rol: rolesConocidos.contains(rolLimpio) ? rolLimpio : null,
+    );
+  }
+
+  /// Roles que se muestran junto al autor (ver `registro_screen.dart`).
+  static const List<String> rolesConocidos = <String>[
+    'Turista',
+    'Guía turístico',
+  ];
+
+  /// Devuelve la parte de [correo] antes de la "@", o "Usuario" si no hay un
+  /// correo válido.
+  static String aliasDesdeCorreo(dynamic correo) {
+    if (correo is! String) return 'Usuario';
+    final String local = correo.trim().split('@').first.trim();
+    return local.isEmpty ? 'Usuario' : local;
+  }
+}
+
+/// Una publicación del feed con los datos que se muestran junto a ella: su
+/// autor, cuántos "me gusta" tiene y si el usuario actual le dio "me gusta".
+class PublicacionEnFeed {
+  const PublicacionEnFeed({
+    required this.publicacion,
+    required this.autor,
+    required this.totalMeGusta,
+    required this.meGusta,
+  });
+
+  final Publicacion publicacion;
+  final AutorPublicacion autor;
+  final int totalMeGusta;
+
+  /// `true` si el usuario autenticado le dio "me gusta".
+  final bool meGusta;
+
+  PublicacionEnFeed copyWith({
+    Publicacion? publicacion,
+    int? totalMeGusta,
+    bool? meGusta,
+  }) {
+    return PublicacionEnFeed(
+      publicacion: publicacion ?? this.publicacion,
+      autor: autor,
+      totalMeGusta: totalMeGusta ?? this.totalMeGusta,
+      meGusta: meGusta ?? this.meGusta,
+    );
+  }
+}
+
+/// Una página del feed. [cursor] se pasa a
+/// [PublicacionService.obtenerFeed] para pedir la siguiente; [hayMas] es
+/// `false` cuando ya no quedan publicaciones más antiguas.
+class PaginaFeed {
+  const PaginaFeed({
+    required this.publicaciones,
+    required this.cursor,
+    required this.hayMas,
+  });
+
+  final List<PublicacionEnFeed> publicaciones;
+  final DocumentSnapshot<Map<String, dynamic>>? cursor;
+  final bool hayMas;
+}
+
 /// Excepción de dominio con un mensaje seguro para mostrar en la interfaz.
 class PublicacionServiceException implements Exception {
   const PublicacionServiceException(this.message, {this.code});
@@ -120,7 +211,8 @@ class PublicacionServiceException implements Exception {
   String toString() => message;
 }
 
-/// Gestiona la creación, consulta, edición y eliminación de publicaciones del
+/// Gestiona la creación, consulta (propias y feed), edición, eliminación y
+/// "me gusta" de las publicaciones del
 /// turista: sube la foto
 /// a Cloudinary (mismo preset `TripMeet` que los certificados de guías, pero
 /// en la carpeta `tripmeet/publicaciones` en vez de `tripmeet/certificados`)
@@ -394,6 +486,162 @@ class PublicacionService {
         code: error.code,
       );
     }
+  }
+
+  /// Cantidad de publicaciones por página del feed.
+  static const int tamanoPaginaFeed = 10;
+
+  /// Consulta el feed: publicaciones de todos los usuarios (incluidas las
+  /// propias), de la más reciente a la más antigua, de [limite] en [limite].
+  /// Para la página siguiente se pasa el [PaginaFeed.cursor] de la anterior.
+  ///
+  /// Cada publicación trae su autor (alias del correo y rol, leídos una sola
+  /// vez por autor), el total de "me gusta" y si el usuario actual le dio
+  /// "me gusta". Si el perfil de un autor no se puede leer, se muestra como
+  /// "Usuario" sin rol; si no se pueden contar los "me gusta", se muestran
+  /// en 0. Solo falla si no se pueden leer las publicaciones.
+  Future<PaginaFeed> obtenerFeed({
+    DocumentSnapshot<Map<String, dynamic>>? despuesDe,
+    int limite = tamanoPaginaFeed,
+  }) async {
+    final QuerySnapshot<Map<String, dynamic>> snapshot;
+    try {
+      Query<Map<String, dynamic>> consulta = _firestore
+          .collection('publicaciones')
+          .orderBy('fechaCreacion', descending: true);
+      // Primero el cursor y después el límite: es el orden lógico y el que
+      // respetan tanto Firestore como su versión simulada de las pruebas.
+      if (despuesDe != null) {
+        consulta = consulta.startAfterDocument(despuesDe);
+      }
+      snapshot = await consulta.limit(limite).get();
+    } on FirebaseException catch (error) {
+      throw PublicacionServiceException(
+        _mensajeParaErrorDeFirestore(error.code),
+        code: error.code,
+      );
+    }
+
+    final List<Publicacion> publicaciones =
+        snapshot.docs.map(Publicacion.fromFirestore).toList();
+    final String? uidActual = _auth.currentUser?.uid;
+
+    final Map<String, AutorPublicacion> autores = await _autores(
+      publicaciones.map((Publicacion p) => p.uid).toSet(),
+    );
+    final List<PublicacionEnFeed> items = await Future.wait(
+      publicaciones.map((Publicacion publicacion) async {
+        final (int total, bool meGusta) = await _meGustaDe(
+          publicacion.id,
+          uidActual,
+        );
+        return PublicacionEnFeed(
+          publicacion: publicacion,
+          autor: autores[publicacion.uid] ??
+              AutorPublicacion.desdePerfil(publicacion.uid, null),
+          totalMeGusta: total,
+          meGusta: meGusta,
+        );
+      }),
+    );
+
+    return PaginaFeed(
+      publicaciones: items,
+      cursor: snapshot.docs.isEmpty ? despuesDe : snapshot.docs.last,
+      hayMas: snapshot.docs.length == limite,
+    );
+  }
+
+  /// Da o quita el "me gusta" del usuario autenticado en [publicacionId].
+  ///
+  /// Cada "me gusta" es el documento `publicaciones/{id}/likes/{uid}`: al usar
+  /// el uid como id, un usuario no puede dar dos "me gusta" a la misma
+  /// publicación, y darlo o quitarlo varias veces no cambia el resultado.
+  /// Devuelve el nuevo total de "me gusta".
+  Future<int> cambiarMeGusta({
+    required String publicacionId,
+    required bool meGusta,
+  }) async {
+    final User? usuario = _auth.currentUser;
+    if (usuario == null) {
+      throw const PublicacionServiceException(
+        'Inicia sesión para dar "me gusta".',
+        code: 'user-not-authenticated',
+      );
+    }
+
+    final DocumentReference<Map<String, dynamic>> publicacion =
+        _firestore.collection('publicaciones').doc(publicacionId);
+    final DocumentReference<Map<String, dynamic>> like =
+        publicacion.collection('likes').doc(usuario.uid);
+
+    try {
+      if (meGusta) {
+        if (!(await publicacion.get()).exists) {
+          throw const PublicacionServiceException(
+            'La publicación ya no existe.',
+            code: 'not-found',
+          );
+        }
+        await like.set(<String, dynamic>{
+          'uid': usuario.uid,
+          'fecha': Timestamp.now(),
+        });
+      } else {
+        await like.delete();
+      }
+      final AggregateQuerySnapshot conteo =
+          await publicacion.collection('likes').count().get();
+      return conteo.count ?? 0;
+    } on FirebaseException catch (error) {
+      throw PublicacionServiceException(
+        _mensajeParaErrorDeFirestore(error.code),
+        code: error.code,
+      );
+    }
+  }
+
+  /// Total de "me gusta" de [publicacionId] y si [uid] le dio "me gusta".
+  /// Si no se pueden leer, `(0, false)`: el feed se muestra igual.
+  Future<(int, bool)> _meGustaDe(String publicacionId, String? uid) async {
+    final CollectionReference<Map<String, dynamic>> likes = _firestore
+        .collection('publicaciones')
+        .doc(publicacionId)
+        .collection('likes');
+    try {
+      final List<Object?> resultados = await Future.wait(<Future<Object?>>[
+        likes.count().get(),
+        if (uid != null) likes.doc(uid).get(),
+      ]);
+      final int total =
+          (resultados.first! as AggregateQuerySnapshot).count ?? 0;
+      final bool meGusta = uid != null &&
+          (resultados.last! as DocumentSnapshot<Map<String, dynamic>>).exists;
+      return (total, meGusta);
+    } on FirebaseException {
+      return (0, false);
+    }
+  }
+
+  /// Lee una sola vez el perfil de cada autor de [uids].
+  Future<Map<String, AutorPublicacion>> _autores(Set<String> uids) async {
+    final List<AutorPublicacion> autores = await Future.wait(
+      uids.map((String uid) async {
+        Map<String, dynamic>? perfil;
+        if (uid.isNotEmpty) {
+          try {
+            perfil =
+                (await _firestore.collection('usuarios').doc(uid).get()).data();
+          } on FirebaseException {
+            perfil = null;
+          }
+        }
+        return AutorPublicacion.desdePerfil(uid, perfil);
+      }),
+    );
+    return <String, AutorPublicacion>{
+      for (final AutorPublicacion autor in autores) autor.uid: autor,
+    };
   }
 
   /// Consulta las publicaciones de [uid], de la más reciente a la más
