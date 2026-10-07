@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
 import 'form_styles.dart';
+import 'login_screen.dart';
 import 'nueva_publicacion_screen.dart';
 import 'preferences_screen.dart';
 import 'publicacion_detalle_screen.dart';
@@ -66,6 +67,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _cerrarSesion() async {
+    final bool? confirmar = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(FormStyles.radio),
+          ),
+          title: const Text('Cerrar sesión'),
+          content: const Text(
+            '¿Estás seguro de que deseas cerrar sesión en TripMeet?',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Cerrar sesión'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmar == true && mounted) {
+      final NavigatorState navigator = Navigator.of(context);
+      await FirebaseAuth.instance.signOut();
+      if (!mounted) return;
+      navigator.pushAndRemoveUntil<void>(
+        MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+        (Route<dynamic> route) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final String correo = FirebaseAuth.instance.currentUser?.email ?? '';
@@ -74,6 +115,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: AppTheme.crema,
       appBar: AppBar(
         title: const Text('Perfil'),
+        actions: <Widget>[
+          IconButton(
+            icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
+            tooltip: 'Cerrar sesión',
+            onPressed: _cerrarSesion,
+          ),
+        ],
       ),
       body: SafeArea(
         child: RefreshIndicator(
@@ -112,6 +160,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     );
                   },
+                ),
+              ),
+              const SizedBox(height: FormStyles.s12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: FormStyles.s20),
+                child: _BotonCerrarSesion(
+                  onTap: _cerrarSesion,
                 ),
               ),
               const SizedBox(height: FormStyles.s8),
@@ -403,6 +458,69 @@ class _BotonPreferencias extends StatelessWidget {
                 Icons.chevron_right_rounded,
                 size: 20,
                 color: AppTheme.textoSuave.withValues(alpha: 0.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Botón para cerrar sesión del usuario en TripMeet.
+class _BotonCerrarSesion extends StatelessWidget {
+  const _BotonCerrarSesion({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(FormStyles.radio),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(FormStyles.radio),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FormStyles.s16,
+            vertical: FormStyles.s12,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(FormStyles.radio),
+            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.logout_rounded,
+                  size: 18,
+                  color: Colors.redAccent,
+                ),
+              ),
+              const SizedBox(width: FormStyles.s12),
+              Expanded(
+                child: Text(
+                  'Cerrar sesión',
+                  style: FormStyles.cuerpo(
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: Colors.redAccent,
+                  ),
+                ),
+              ),
+              const SizedBox(width: FormStyles.s8),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: Colors.redAccent.withValues(alpha: 0.5),
               ),
             ],
           ),
