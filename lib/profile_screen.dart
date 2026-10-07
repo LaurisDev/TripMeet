@@ -162,13 +162,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   },
                 ),
               ),
-              const SizedBox(height: FormStyles.s12),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: FormStyles.s20),
-                child: _BotonCerrarSesion(
-                  onTap: _cerrarSesion,
-                ),
-              ),
               const SizedBox(height: FormStyles.s8),
               Padding(
                 padding: const EdgeInsets.fromLTRB(
@@ -458,69 +451,6 @@ class _BotonPreferencias extends StatelessWidget {
                 Icons.chevron_right_rounded,
                 size: 20,
                 color: AppTheme.textoSuave.withValues(alpha: 0.5),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Botón para cerrar sesión del usuario en TripMeet.
-class _BotonCerrarSesion extends StatelessWidget {
-  const _BotonCerrarSesion({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(FormStyles.radio),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(FormStyles.radio),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: FormStyles.s16,
-            vertical: FormStyles.s12,
-          ),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(FormStyles.radio),
-            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            children: <Widget>[
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.redAccent.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.logout_rounded,
-                  size: 18,
-                  color: Colors.redAccent,
-                ),
-              ),
-              const SizedBox(width: FormStyles.s12),
-              Expanded(
-                child: Text(
-                  'Cerrar sesión',
-                  style: FormStyles.cuerpo(
-                    size: 14,
-                    weight: FontWeight.w600,
-                    color: Colors.redAccent,
-                  ),
-                ),
-              ),
-              const SizedBox(width: FormStyles.s8),
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 20,
-                color: Colors.redAccent.withValues(alpha: 0.5),
               ),
             ],
           ),
