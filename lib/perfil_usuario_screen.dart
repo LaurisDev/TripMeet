@@ -1,9 +1,13 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
 import 'evento_detalle_screen.dart';
 import 'evento_service.dart';
 import 'form_styles.dart';
+import 'login_screen.dart';
+import 'nueva_publicacion_screen.dart';
+import 'preferences_screen.dart';
 import 'publicacion_detalle_screen.dart';
 import 'publicacion_service.dart';
 import 'widgets/evento_guia_estilo.dart';
@@ -98,20 +102,31 @@ class AvatarUsuario extends StatelessWidget {
   }
 }
 
-/// Perfil de otro usuario: foto, nombre, rol y sus publicaciones. Si es guía
+/// Perfil de un usuario: foto, nombre, rol y sus publicaciones. Si es guía
 /// turístico, también su perfil laboral y su carné de guía (solo cuando está
 /// aprobado; los antecedentes judiciales y los certificados adicionales no se
 /// muestran).
+///
+/// Es la misma pantalla para el perfil propio (pestaña "Perfil") y el de
+/// otras personas. Si es el propio, además permite cerrar sesión, abrir las
+/// preferencias de recomendación y crear publicaciones; editar o eliminar
+/// una publicación se hace desde su detalle, que solo lo permite al autor.
 class PerfilUsuarioScreen extends StatefulWidget {
   const PerfilUsuarioScreen({
-    required this.uid,
+    this.uid,
+    this.uidUsuarioActual,
     this.cargarPerfil = cargarPerfilDeFirestore,
     this.abrirEnlace = abrirEnlaceExterno,
     this.cargarPublicaciones = cargarPublicacionesDeFirestore,
     super.key,
   });
 
-  final String uid;
+  /// Usuario cuyo perfil se muestra; `null` para el del usuario autenticado.
+  final String? uid;
+
+  /// UID de quien está viendo el perfil. Por defecto, el usuario autenticado
+  /// en Firebase; se puede inyectar en pruebas.
+  final String? uidUsuarioActual;
 
   /// Lee el perfil `usuarios/{uid}` (inyectable en pruebas).
   final CargarPerfil cargarPerfil;
@@ -127,35 +142,141 @@ class PerfilUsuarioScreen extends StatefulWidget {
 }
 
 class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
+  late final String? _uidActual;
+  late final String _uid;
   late Future<Map<String, dynamic>?> _perfil;
   late Future<List<Publicacion>> _publicaciones;
+
+  /// `true` si el perfil es del usuario autenticado.
+  bool get _esPropio => _uidActual != null && _uidActual == _uid;
 
   @override
   void initState() {
     super.initState();
-    _perfil = widget.cargarPerfil(widget.uid);
+    _uidActual = widget.uidUsuarioActual ?? _obtenerUidUsuarioActual();
+    _uid = widget.uid ?? _uidActual ?? '';
+    _cargarPerfil();
     _cargarPublicaciones();
   }
 
+  /// UID del usuario autenticado; `null` si no hay sesión o si Firebase no
+  /// está inicializado (pruebas).
+  String? _obtenerUidUsuarioActual() {
+    try {
+      return FirebaseAuth.instance.currentUser?.uid;
+    } on FirebaseException {
+      return null;
+    }
+  }
+
+  void _cargarPerfil() {
+    _perfil = widget.cargarPerfil(_uid);
+  }
+
   void _cargarPublicaciones() {
-    _publicaciones = widget.cargarPublicaciones(widget.uid);
+    _publicaciones = widget.cargarPublicaciones(_uid);
     // Su FutureBuilder aparece hasta que carga el perfil; así un error que
     // llegue antes no queda como no manejado.
     _publicaciones.ignore();
   }
 
-  /// Si el dueño edita o elimina una publicación desde el detalle, se
-  /// vuelve a consultar la lista.
+  /// Si el dueño edita una publicación desde el detalle, se vuelve a
+  /// consultar la lista.
   void _recargarPublicaciones([Object? _]) {
     if (!mounted) return;
     setState(_cargarPublicaciones);
+  }
+
+  void _publicacionEliminada(String _) {
+    _recargarPublicaciones();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Publicación eliminada correctamente.')),
+    );
+  }
+
+  Future<void> _refrescar() async {
+    setState(() {
+      _cargarPerfil();
+      _cargarPublicaciones();
+    });
+    try {
+      await Future.wait<Object?>(<Future<Object?>>[_perfil, _publicaciones]);
+    } catch (_) {
+      // El error ya se muestra en su sección.
+    }
+  }
+
+  Future<void> _abrirNuevaPublicacion() async {
+    final bool? publicado = await Navigator.of(context).push<bool>(
+      MaterialPageRoute<bool>(builder: (_) => const NuevaPublicacionScreen()),
+    );
+    if (publicado == true) {
+      _recargarPublicaciones();
+    }
+  }
+
+  void _abrirPreferencias() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const PreferencesScreen()));
+  }
+
+  Future<void> _cerrarSesion() async {
+    final bool? confirmar = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(FormStyles.radio),
+          ),
+          title: const Text('Cerrar sesión'),
+          content: const Text(
+            '¿Estás seguro de que deseas cerrar sesión en TripMeet?',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+              ),
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Cerrar sesión'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmar == true && mounted) {
+      final NavigatorState navigator = Navigator.of(context);
+      await FirebaseAuth.instance.signOut();
+      if (!mounted) return;
+      navigator.pushAndRemoveUntil<void>(
+        MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+        (Route<dynamic> route) => false,
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.crema,
-      appBar: AppBar(title: const Text('Perfil')),
+      appBar: AppBar(
+        title: const Text('Perfil'),
+        actions: <Widget>[
+          if (_esPropio)
+            IconButton(
+              icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
+              tooltip: 'Cerrar sesión',
+              onPressed: _cerrarSesion,
+            ),
+        ],
+      ),
       body: SafeArea(
         child: FutureBuilder<Map<String, dynamic>?>(
           future: _perfil,
@@ -168,18 +289,26 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.data == null) {
-                  return Center(
-                    child: Padding(
+                  return RefreshIndicator(
+                    onRefresh: _refrescar,
+                    child: ListView(
                       padding: const EdgeInsets.all(FormStyles.s20),
-                      child: Text(
-                        'No se pudo cargar el perfil de este usuario.',
-                        textAlign: TextAlign.center,
-                        style: FormStyles.ayuda(),
-                      ),
+                      children: <Widget>[
+                        Text(
+                          _uid.isEmpty
+                              ? 'Inicia sesión para ver tu perfil.'
+                              : 'No se pudo cargar el perfil de este usuario.',
+                          textAlign: TextAlign.center,
+                          style: FormStyles.ayuda(),
+                        ),
+                      ],
                     ),
                   );
                 }
-                return _buildPerfil(PerfilPublico(snapshot.data));
+                return RefreshIndicator(
+                  onRefresh: _refrescar,
+                  child: _buildPerfil(PerfilPublico(snapshot.data)),
+                );
               },
         ),
       ),
@@ -187,40 +316,23 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
   }
 
   Widget _buildPerfil(PerfilPublico perfil) {
-    final String? rol = perfil.rol;
-
     return ListView(
       padding: const EdgeInsets.all(FormStyles.s20),
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            AvatarUsuario(perfil: perfil, radio: 32),
-            const SizedBox(width: FormStyles.s16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    perfil.nombre,
-                    style: FormStyles.titulo(pequena: true),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (rol != null) ...<Widget>[
-                    const SizedBox(height: FormStyles.s4),
-                    Text(rol, style: FormStyles.ayuda()),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
+        _EncabezadoPerfil(perfil: perfil),
+        if (_esPropio) ...<Widget>[
+          const SizedBox(height: FormStyles.s16),
+          _BotonPreferencias(onTap: _abrirPreferencias),
+        ],
         if (perfil.esGuia) ...<Widget>[
-          const SizedBox(height: FormStyles.s24),
+          const SizedBox(height: FormStyles.s16),
           _PerfilLaboral(datos: perfil.perfilLaboral),
-          const SizedBox(height: FormStyles.s24),
-          Text('Certificados', style: FormStyles.etiqueta()),
-          const SizedBox(height: FormStyles.s8),
-          _buildCertificados(perfil),
+          const SizedBox(height: FormStyles.s16),
+          _Seccion(
+            icono: Icons.verified_outlined,
+            titulo: 'Certificados',
+            child: _buildCertificados(perfil),
+          ),
         ],
         const SizedBox(height: FormStyles.s24),
         _buildPublicaciones(),
@@ -234,6 +346,8 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
       builder:
           (BuildContext context, AsyncSnapshot<List<Publicacion>> snapshot) {
             final List<Publicacion>? publicaciones = snapshot.data;
+            // En el perfil propio, el primer recuadro es "+" para publicar.
+            final int extra = _esPropio ? 1 : 0;
 
             final Widget contenido;
             if (snapshot.connectionState != ConnectionState.done) {
@@ -246,7 +360,7 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                 'No se pudieron cargar las publicaciones.',
                 style: FormStyles.ayuda(),
               );
-            } else if (publicaciones.isEmpty) {
+            } else if (publicaciones.isEmpty && !_esPropio) {
               contenido = Text(
                 'Aún no tiene publicaciones.',
                 key: const Key('perfil-sin-publicaciones'),
@@ -262,13 +376,19 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                   crossAxisSpacing: FormStyles.s8,
                   mainAxisSpacing: FormStyles.s8,
                 ),
-                itemCount: publicaciones.length,
-                itemBuilder: (BuildContext context, int index) =>
-                    _MiniaturaPublicacion(
-                      publicacion: publicaciones[index],
-                      onActualizada: _recargarPublicaciones,
-                      onEliminada: _recargarPublicaciones,
-                    ),
+                itemCount: publicaciones.length + extra,
+                itemBuilder: (BuildContext context, int index) {
+                  if (_esPropio && index == 0) {
+                    return _AgregarPublicacionTile(
+                      onTap: _abrirNuevaPublicacion,
+                    );
+                  }
+                  return _MiniaturaPublicacion(
+                    publicacion: publicaciones[index - extra],
+                    onActualizada: _recargarPublicaciones,
+                    onEliminada: _publicacionEliminada,
+                  );
+                },
               );
             }
 
@@ -283,7 +403,10 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                       color: AppTheme.azulPetroleo,
                     ),
                     const SizedBox(width: FormStyles.s8),
-                    Text('Publicaciones', style: FormStyles.etiqueta()),
+                    Text(
+                      _esPropio ? 'Mis publicaciones' : 'Publicaciones',
+                      style: FormStyles.etiqueta(),
+                    ),
                     if (publicaciones != null &&
                         publicaciones.isNotEmpty) ...<Widget>[
                       const SizedBox(width: FormStyles.s8),
@@ -328,9 +451,8 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
       key: const Key('perfil-sin-certificado'),
       padding: const EdgeInsets.all(FormStyles.s12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: EstiloEventoGuia.fondo.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(FormStyles.radio),
-        border: Border.all(color: FormStyles.colorBorde),
       ),
       child: Row(
         children: <Widget>[
@@ -347,7 +469,110 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
   }
 }
 
-/// Experiencia, zonas, especialidades, idiomas y biografía del guía.
+/// Tarjeta superior: foto, nombre y rol. Los guías llevan un aro dorado y,
+/// si sus certificados están aprobados, la marca "Verificado".
+class _EncabezadoPerfil extends StatelessWidget {
+  const _EncabezadoPerfil({required this.perfil});
+
+  final PerfilPublico perfil;
+
+  @override
+  Widget build(BuildContext context) {
+    final String? rol = perfil.rol;
+    final bool esGuia = perfil.esGuia;
+    final bool verificado = EventoService.esGuiaAprobado(perfil.datos);
+
+    return Container(
+      key: const Key('perfil-encabezado'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: FormStyles.s20,
+        vertical: FormStyles.s24,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(FormStyles.radioTarjeta),
+        border: Border.all(color: FormStyles.colorBorde),
+      ),
+      child: Column(
+        children: <Widget>[
+          Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: esGuia
+                        ? EstiloEventoGuia.borde
+                        : AppTheme.verdeAzulado.withValues(alpha: 0.4),
+                    width: 2.5,
+                  ),
+                ),
+                child: AvatarUsuario(perfil: perfil, radio: 44),
+              ),
+              if (verificado)
+                Positioned(
+                  right: 0,
+                  bottom: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.verified_rounded,
+                      size: 24,
+                      color: EstiloEventoGuia.titulo,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: FormStyles.s12),
+          Text(
+            perfil.nombre,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: FormStyles.titulo(pequena: true),
+          ),
+          if (rol != null) ...<Widget>[
+            const SizedBox(height: FormStyles.s8),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: FormStyles.s8,
+              runSpacing: FormStyles.s4,
+              children: <Widget>[
+                _Pastilla(
+                  icono: esGuia ? Icons.hiking_rounded : Icons.luggage_outlined,
+                  texto: rol,
+                  fondo: esGuia
+                      ? EstiloEventoGuia.fondoEtiqueta
+                      : AppTheme.verdeAzulado.withValues(alpha: 0.12),
+                  color: esGuia
+                      ? EstiloEventoGuia.textoEtiqueta
+                      : AppTheme.azulPetroleo,
+                ),
+                if (verificado)
+                  const _Pastilla(
+                    icono: Icons.verified_outlined,
+                    texto: 'Verificado',
+                    fondo: EstiloEventoGuia.fondo,
+                    color: EstiloEventoGuia.texto,
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Experiencia, zonas, especialidades, idiomas y biografía del guía,
+/// organizados en una fila de datos clave y secciones con chips.
 class _PerfilLaboral extends StatelessWidget {
   const _PerfilLaboral({required this.datos});
 
@@ -361,7 +586,10 @@ class _PerfilLaboral extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final dynamic anios = datos['aniosExperiencia'];
-    final dynamic biografia = datos['biografia'];
+    final dynamic bio = datos['biografia'];
+    final String? biografia = bio is String && bio.trim().isNotEmpty
+        ? bio.trim()
+        : null;
     final List<String> zonas = _lista('zonas');
     final List<String> especialidades = _lista('especialidades');
     final List<String> idiomas = _lista('idiomas');
@@ -370,45 +598,277 @@ class _PerfilLaboral extends StatelessWidget {
         zonas.isEmpty &&
         especialidades.isEmpty &&
         idiomas.isEmpty &&
-        biografia is! String) {
-      return Text(
-        'Este guía aún no completó su perfil laboral.',
-        style: FormStyles.ayuda(),
+        biografia == null) {
+      return _Seccion(
+        icono: Icons.badge_outlined,
+        titulo: 'Perfil del guía',
+        child: Text(
+          'Este guía aún no completó su perfil laboral.',
+          style: FormStyles.ayuda(),
+        ),
       );
     }
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Text('Perfil del guía', style: FormStyles.etiqueta()),
-        const SizedBox(height: FormStyles.s8),
-        if (anios is int)
-          DatoEvento(
-            icono: Icons.workspace_premium_outlined,
-            texto: anios == 1
-                ? '1 año de experiencia'
-                : '$anios años de experiencia',
+        Row(
+          children: <Widget>[
+            if (anios is int)
+              _DatoClave(
+                valor: '$anios',
+                etiqueta: anios == 1
+                    ? 'año de experiencia'
+                    : 'años de experiencia',
+              ),
+            if (idiomas.isNotEmpty) ...<Widget>[
+              if (anios is int) const SizedBox(width: FormStyles.s8),
+              _DatoClave(
+                valor: '${idiomas.length}',
+                etiqueta: idiomas.length == 1 ? 'idioma' : 'idiomas',
+              ),
+            ],
+            if (zonas.isNotEmpty) ...<Widget>[
+              if (anios is int || idiomas.isNotEmpty)
+                const SizedBox(width: FormStyles.s8),
+              _DatoClave(
+                valor: '${zonas.length}',
+                etiqueta: zonas.length == 1 ? 'zona' : 'zonas',
+              ),
+            ],
+          ],
+        ),
+        if (biografia != null) ...<Widget>[
+          const SizedBox(height: FormStyles.s16),
+          _Seccion(
+            icono: Icons.format_quote_rounded,
+            titulo: 'Sobre mí',
+            child: Text(biografia, style: FormStyles.subtitulo()),
           ),
-        if (zonas.isNotEmpty) ...<Widget>[
-          const SizedBox(height: FormStyles.s8),
-          DatoEvento(icono: Icons.map_outlined, texto: zonas.join(', ')),
         ],
-        if (especialidades.isNotEmpty) ...<Widget>[
-          const SizedBox(height: FormStyles.s8),
-          DatoEvento(
-            icono: Icons.hiking_rounded,
-            texto: especialidades.join(', '),
+        if (especialidades.isNotEmpty ||
+            zonas.isNotEmpty ||
+            idiomas.isNotEmpty) ...<Widget>[
+          const SizedBox(height: FormStyles.s16),
+          _Seccion(
+            icono: Icons.badge_outlined,
+            titulo: 'Perfil del guía',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                if (especialidades.isNotEmpty)
+                  _GrupoChips(
+                    icono: Icons.hiking_rounded,
+                    titulo: 'Especialidades',
+                    valores: especialidades,
+                  ),
+                if (zonas.isNotEmpty)
+                  _GrupoChips(
+                    icono: Icons.map_outlined,
+                    titulo: 'Zonas donde guía',
+                    valores: zonas,
+                  ),
+                if (idiomas.isNotEmpty)
+                  _GrupoChips(
+                    icono: Icons.translate_rounded,
+                    titulo: 'Idiomas',
+                    valores: idiomas,
+                  ),
+              ],
+            ),
           ),
-        ],
-        if (idiomas.isNotEmpty) ...<Widget>[
-          const SizedBox(height: FormStyles.s8),
-          DatoEvento(icono: Icons.translate_rounded, texto: idiomas.join(', ')),
-        ],
-        if (biografia is String && biografia.trim().isNotEmpty) ...<Widget>[
-          const SizedBox(height: FormStyles.s12),
-          Text(biografia.trim(), style: FormStyles.subtitulo()),
         ],
       ],
+    );
+  }
+}
+
+/// Recuadro blanco con un título e ícono.
+class _Seccion extends StatelessWidget {
+  const _Seccion({
+    required this.icono,
+    required this.titulo,
+    required this.child,
+  });
+
+  final IconData icono;
+  final String titulo;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(FormStyles.s16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(FormStyles.radio),
+        border: Border.all(color: FormStyles.colorBorde),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icono, size: 18, color: AppTheme.verdeAzulado),
+              const SizedBox(width: FormStyles.s8),
+              Text(titulo, style: FormStyles.etiqueta()),
+            ],
+          ),
+          const SizedBox(height: FormStyles.s12),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// Número destacado con su descripción (por ejemplo, "5 · años de
+/// experiencia").
+class _DatoClave extends StatelessWidget {
+  const _DatoClave({required this.valor, required this.etiqueta});
+
+  final String valor;
+  final String etiqueta;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: FormStyles.s8,
+          vertical: FormStyles.s12,
+        ),
+        decoration: BoxDecoration(
+          color: AppTheme.verdeAzulado.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(FormStyles.radio),
+        ),
+        child: Column(
+          children: <Widget>[
+            Text(
+              valor,
+              style: FormStyles.cuerpo(
+                size: 22,
+                weight: FontWeight.w700,
+                color: AppTheme.azulPetroleo,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              etiqueta,
+              textAlign: TextAlign.center,
+              style: FormStyles.cuerpo(size: 12, color: AppTheme.textoSuave),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Subtítulo pequeño con los valores como chips.
+class _GrupoChips extends StatelessWidget {
+  const _GrupoChips({
+    required this.icono,
+    required this.titulo,
+    required this.valores,
+  });
+
+  final IconData icono;
+  final String titulo;
+  final List<String> valores;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: FormStyles.s12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(icono, size: 14, color: AppTheme.textoSuave),
+              const SizedBox(width: FormStyles.s4),
+              Text(
+                titulo,
+                style: FormStyles.cuerpo(
+                  size: 13,
+                  weight: FontWeight.w600,
+                  color: AppTheme.textoSuave,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: FormStyles.s8),
+          Wrap(
+            spacing: FormStyles.s8,
+            runSpacing: FormStyles.s8,
+            children: <Widget>[
+              for (final String valor in valores)
+                _Pastilla(
+                  texto: valor,
+                  fondo: AppTheme.crema,
+                  color: AppTheme.azulPetroleo,
+                  borde: FormStyles.colorBorde,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Etiqueta redondeada con ícono opcional.
+class _Pastilla extends StatelessWidget {
+  const _Pastilla({
+    required this.texto,
+    required this.fondo,
+    required this.color,
+    this.icono,
+    this.borde,
+  });
+
+  final String texto;
+  final Color fondo;
+  final Color color;
+  final IconData? icono;
+  final Color? borde;
+
+  @override
+  Widget build(BuildContext context) {
+    final IconData? icono = this.icono;
+    final Color? borde = this.borde;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: FormStyles.s12,
+        vertical: 6,
+      ),
+      decoration: BoxDecoration(
+        color: fondo,
+        borderRadius: BorderRadius.circular(FormStyles.radioPill),
+        border: borde == null ? null : Border.all(color: borde),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (icono != null) ...<Widget>[
+            Icon(icono, size: 14, color: color),
+            const SizedBox(width: FormStyles.s4),
+          ],
+          Flexible(
+            child: Text(
+              texto,
+              overflow: TextOverflow.ellipsis,
+              style: FormStyles.cuerpo(
+                size: 13,
+                weight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -449,6 +909,106 @@ class _MiniaturaPublicacion extends StatelessWidget {
           child: ImagenRemota(
             url: publicacion.imagenUrl,
             fondo: AppTheme.crema,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Recuadro con un "+" para crear una nueva publicación, al inicio de la
+/// grilla del perfil propio.
+class _AgregarPublicacionTile extends StatelessWidget {
+  const _AgregarPublicacionTile({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppTheme.crema,
+      borderRadius: BorderRadius.circular(FormStyles.radio),
+      child: InkWell(
+        key: const Key('perfil-agregar-publicacion'),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(FormStyles.radio),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(FormStyles.radio),
+            border: Border.all(
+              color: AppTheme.azulPetroleo.withValues(alpha: 0.3),
+              width: 1.5,
+            ),
+          ),
+          child: const Center(
+            child: Icon(
+              Icons.add_rounded,
+              size: 28,
+              color: AppTheme.azulPetroleo,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Acceso a Preferencias de recomendación, solo en el perfil propio.
+class _BotonPreferencias extends StatelessWidget {
+  const _BotonPreferencias({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(FormStyles.radio),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(FormStyles.radio),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FormStyles.s16,
+            vertical: FormStyles.s12,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(FormStyles.radio),
+            border: Border.all(color: FormStyles.colorBorde),
+          ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppTheme.verdeAzulado.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.tune_rounded,
+                  size: 18,
+                  color: AppTheme.verdeAzulado,
+                ),
+              ),
+              const SizedBox(width: FormStyles.s12),
+              Expanded(
+                child: Text(
+                  'Preferencias de recomendación',
+                  style: FormStyles.cuerpo(
+                    size: 14,
+                    weight: FontWeight.w600,
+                    color: AppTheme.azulPetroleo,
+                  ),
+                ),
+              ),
+              const SizedBox(width: FormStyles.s8),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: AppTheme.textoSuave.withValues(alpha: 0.5),
+              ),
+            ],
           ),
         ),
       ),

@@ -125,11 +125,34 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(PerfilUsuarioScreen), findsOneWidget);
-      expect(find.text('5 años de experiencia'), findsOneWidget);
-      expect(find.text('Español, Inglés'), findsOneWidget);
+      expect(find.text('Verificado'), findsOneWidget);
+      expect(find.text('años de experiencia'), findsOneWidget);
+      expect(find.text('5'), findsOneWidget);
+      expect(find.text('Español'), findsOneWidget);
+      expect(find.text('Inglés'), findsOneWidget);
       expect(find.text('Certificados'), findsOneWidget);
       expect(find.text('Ver certificado'), findsOneWidget);
       expect(find.textContaining('antecedentes'), findsNothing);
+    });
+
+    testWidgets('el perfil de un guía no desborda en un teléfono angosto',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PerfilUsuarioScreen(
+            uid: 'luis',
+            cargarPerfil: (String uid) async => _perfiles[uid],
+            cargarPublicaciones: (String uid) async => <Publicacion>[],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('un guía en revisión no muestra archivos',
@@ -187,6 +210,51 @@ void main() {
       await abrirPerfil(tester, <Publicacion>[]);
 
       expect(find.text('Aún no tiene publicaciones.'), findsOneWidget);
+    });
+  });
+
+  group('perfil propio y ajeno', () {
+    Future<void> abrir(WidgetTester tester, {String? uid}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PerfilUsuarioScreen(
+            uid: uid,
+            uidUsuarioActual: 'ana',
+            cargarPerfil: (String uid) async => _perfiles[uid],
+            cargarPublicaciones: (String uid) async => <Publicacion>[],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('sin uid muestra el perfil propio con sus opciones',
+        (WidgetTester tester) async {
+      await abrir(tester);
+
+      expect(find.text('ana'), findsOneWidget);
+      expect(find.byTooltip('Cerrar sesión'), findsOneWidget);
+      expect(find.text('Preferencias de recomendación'), findsOneWidget);
+      expect(find.text('Mis publicaciones'), findsOneWidget);
+      expect(
+        find.byKey(const Key('perfil-agregar-publicacion')),
+        findsOneWidget,
+      );
+      expect(find.text('Aún no tiene publicaciones.'), findsNothing);
+    });
+
+    testWidgets('el perfil de otra persona no tiene opciones del dueño',
+        (WidgetTester tester) async {
+      await abrir(tester, uid: 'luis');
+
+      expect(find.byTooltip('Cerrar sesión'), findsNothing);
+      expect(find.text('Preferencias de recomendación'), findsNothing);
+      await tester.scrollUntilVisible(find.text('Publicaciones'), 300);
+      expect(find.text('Publicaciones'), findsOneWidget);
+      expect(
+        find.byKey(const Key('perfil-agregar-publicacion')),
+        findsNothing,
+      );
     });
   });
 }

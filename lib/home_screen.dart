@@ -4,7 +4,7 @@ import 'buscar_lugares_screen.dart';
 import 'eventos_screen.dart';
 import 'feed_publicaciones_screen.dart';
 import 'mapa_exploracion_screen.dart';
-import 'profile_screen.dart';
+import 'perfil_usuario_screen.dart';
 import 'test_recommendations_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -35,7 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
       const BuscarLugaresScreen(),    // Índice 1
       const EventosScreen(),    // Índice 2
       const FeedPublicacionesScreen(),    // Índice 3
-      const ProfileScreen(),    // Índice 4
+      const PerfilUsuarioScreen(),    // Índice 4
     ];
 
     return Scaffold(
