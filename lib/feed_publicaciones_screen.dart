@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'form_styles.dart';
 import 'nueva_publicacion_screen.dart';
+import 'perfil_usuario_screen.dart';
 import 'publicacion_detalle_screen.dart';
 import 'publicacion_service.dart';
 import 'widgets/aviso_error.dart';
@@ -466,15 +467,19 @@ class _TarjetaPublicacionState extends State<_TarjetaPublicacion> {
       ),
       child: Row(
         children: <Widget>[
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: AppTheme.azulPetroleo,
-            child: Text(
-              autor.alias.characters.first.toUpperCase(),
-              style: FormStyles.cuerpo(
-                size: 16,
-                weight: FontWeight.w700,
-                color: Colors.white,
+          GestureDetector(
+            key: const Key('feed-autor-foto'),
+            onTap: () => abrirPerfilUsuario(context, autor.uid),
+            child: CircleAvatar(
+              radius: 20,
+              backgroundColor: AppTheme.azulPetroleo,
+              child: Text(
+                autor.alias.characters.first.toUpperCase(),
+                style: FormStyles.cuerpo(
+                  size: 16,
+                  weight: FontWeight.w700,
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
@@ -486,14 +491,17 @@ class _TarjetaPublicacionState extends State<_TarjetaPublicacion> {
                 Row(
                   children: <Widget>[
                     Flexible(
-                      child: Text(
-                        autor.alias,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: FormStyles.cuerpo(
-                          size: 15,
-                          weight: FontWeight.w700,
-                          color: AppTheme.azulPetroleo,
+                      child: GestureDetector(
+                        onTap: () => abrirPerfilUsuario(context, autor.uid),
+                        child: Text(
+                          autor.alias,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: FormStyles.cuerpo(
+                            size: 15,
+                            weight: FontWeight.w700,
+                            color: AppTheme.azulPetroleo,
+                          ),
                         ),
                       ),
                     ),

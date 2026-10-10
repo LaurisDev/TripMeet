@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
 import 'lugares_service.dart';
+import 'perfil_usuario_screen.dart';
 
 class DetalleLugarScreen extends StatefulWidget {
   final Lugar lugar;
@@ -369,7 +370,36 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(r.nombreUsuario, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.azulPetroleo)),
+                  // Foto y nombre del autor: al tocarlos se abre su perfil.
+                  Flexible(
+                    child: GestureDetector(
+                      key: const Key('resena-autor'),
+                      onTap: () => abrirPerfilUsuario(context, r.usuarioId),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: AppTheme.azulPetroleo,
+                            foregroundImage: (r.fotoUsuario ?? '').isEmpty ? null : NetworkImage(r.fotoUsuario!),
+                            onForegroundImageError: (r.fotoUsuario ?? '').isEmpty ? null : (_, _) {},
+                            child: Text(
+                              r.nombreUsuario.isEmpty ? '?' : r.nombreUsuario.characters.first.toUpperCase(),
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              r.nombreUsuario,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppTheme.azulPetroleo),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   Row(
                     children: List.generate(5, (i) => Icon(
                       Icons.star_rounded, 
