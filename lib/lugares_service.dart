@@ -129,6 +129,10 @@ class Resena {
   final double calificacion;
   final DateTime fecha;
 
+  /// Evento compartido, solo en reseñas entre usuarios (HU-28); `null` en
+  /// las reseñas de lugares.
+  final String? eventoId;
+
   Resena({
     this.id,
     this.usuarioId,
@@ -137,6 +141,7 @@ class Resena {
     required this.comentario,
     required this.calificacion,
     required this.fecha,
+    this.eventoId,
   });
 
   factory Resena.fromFirestore(DocumentSnapshot doc) {
@@ -159,6 +164,7 @@ class Resena {
       comentario: datos['comentario']?.toString() ?? 'Sin comentario',
       calificacion: calFinal,
       fecha: (datos['fecha'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      eventoId: datos['eventoId']?.toString(),
     );
   }
 
@@ -170,6 +176,7 @@ class Resena {
       'comentario': comentario,
       'calificacion': calificacion,
       'fecha': Timestamp.fromDate(fecha),
+      if (eventoId != null) 'eventoId': eventoId,
     };
   }
 }

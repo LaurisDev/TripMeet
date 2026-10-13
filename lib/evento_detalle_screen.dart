@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'app_theme.dart';
+import 'calificacion_usuario_service.dart';
+import 'calificar_participantes.dart';
 import 'editar_evento_screen.dart';
 import 'evento_service.dart';
 import 'form_styles.dart';
@@ -87,6 +89,7 @@ class EventoDetalleScreen extends StatefulWidget {
     this.cargarPerfil = cargarPerfilDeFirestore,
     this.service,
     this.uidUsuarioActual,
+    this.servicioCalificaciones,
     super.key,
   });
 
@@ -104,6 +107,9 @@ class EventoDetalleScreen extends StatefulWidget {
   /// UID de quien ve el evento; por defecto, el usuario autenticado
   /// (inyectable en pruebas).
   final String? uidUsuarioActual;
+
+  /// Servicio de calificaciones entre participantes (inyectable en pruebas).
+  final CalificacionUsuarioService? servicioCalificaciones;
 
   @override
   State<EventoDetalleScreen> createState() => _EventoDetalleScreenState();
@@ -654,6 +660,17 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
                             onTap: _abrirPerfil,
                           ),
                     ),
+                  if (usuarioActualUid != null &&
+                      !_eventoNoExiste &&
+                      evento.fechaHora.isBefore(DateTime.now())) ...<Widget>[
+                    const SizedBox(height: FormStyles.s20),
+                    CalificarParticipantes(
+                      evento: evento,
+                      uidUsuarioActual: usuarioActualUid,
+                      cargarPerfil: widget.cargarPerfil,
+                      service: widget.servicioCalificaciones,
+                    ),
+                  ],
                   const SizedBox(height: FormStyles.s24),
                   _buildAcciones(evento, usuarioActualUid),
                 ],
