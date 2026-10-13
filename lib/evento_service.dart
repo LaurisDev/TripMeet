@@ -133,8 +133,37 @@ class Evento {
   /// si nadie se ha unido.
   final List<String> inscritos;
 
-  /// `true` si hay cupo máximo y ya se completó.
+  /// `true` si hay cupo máximo y ya se completó. Un evento sin
+  /// [cupoMaximo] no tiene límite de participantes, así que nunca se llena.
   bool get estaLleno => cupoMaximo != null && inscritos.length >= cupoMaximo!;
+
+  /// Cupos que quedan; `null` si el evento no tiene cupo máximo. Nunca es
+  /// negativo (si el cupo se redujo por debajo de los inscritos, es 0).
+  int? get cuposDisponibles {
+    final int? cupo = cupoMaximo;
+    if (cupo == null) return null;
+    final int restantes = cupo - inscritos.length;
+    return restantes < 0 ? 0 : restantes;
+  }
+
+  /// Copia con la lista de [inscritos] reemplazada (por ejemplo, después de
+  /// que el usuario se une).
+  Evento conInscritos(List<String> inscritos) => Evento(
+    id: id,
+    creadorUid: creadorUid,
+    nombre: nombre,
+    lugar: lugar,
+    fechaHora: fechaHora,
+    fechaCreacion: fechaCreacion,
+    descripcion: descripcion,
+    imagenUrl: imagenUrl,
+    imagenPublicId: imagenPublicId,
+    creadoPorGuia: creadoPorGuia,
+    certificadoGuia: certificadoGuia,
+    cupoMaximo: cupoMaximo,
+    precio: precio,
+    inscritos: inscritos,
+  );
 
   /// Copia con los datos del creador calculados desde su [perfil]
   /// (`usuarios/{creadorUid}`; `null` si no existe o no se pudo leer).
@@ -216,6 +245,19 @@ class EventoServiceException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// El evento ya no tiene cupos (`evento-lleno`). Trae los [inscritos] tal
+/// como están guardados para que la interfaz se actualice: por ejemplo, si
+/// otra persona ocupó el último cupo mientras el usuario veía el detalle.
+class EventoLlenoException extends EventoServiceException {
+  const EventoLlenoException(this.inscritos)
+    : super(
+        'El evento ya no tiene cupos disponibles.',
+        code: 'evento-lleno',
+      );
+
+  final List<String> inscritos;
 }
 
 /// Crea y consulta los eventos turísticos: sube la foto a Cloudinary (mismo
@@ -583,6 +625,183 @@ class EventoService {
     }
   }
 
+  /// Inscribe al usuario autenticado en el evento [eventoId] y devuelve la
+  /// lista de inscritos actualizada.
+  ///
+  /// La inscripción es el UID del usuario dentro del arreglo `inscritos` del
+  /// documento del evento. Se hace en una transacción que lee el evento y
+  /// comprueba que:
+  ///
+  /// - haya sesión iniciada (`user-not-authenticated`);
+  /// - el evento exista (`not-found`) y no haya ocurrido
+  ///   (`evento-finalizado`);
+  /// - quien se une no sea el creador (`es-creador`);
+  /// - quede cupo, si el evento tiene cupo máximo (`evento-lleno`, como
+  ///   [EventoLlenoException] con los inscritos actuales). Sin cupo máximo
+  ///   no hay límite.
+  ///
+  /// Así, si dos personas se unen a la vez al último cupo, solo una lo
+  /// consigue. Si el usuario ya estaba inscrito no se escribe nada: no hay
+  /// inscripciones duplicadas.
+  Future<List<String>> unirseEvento(String eventoId) async {
+    final User? usuario = _auth.currentUser;
+    if (usuario == null) {
+      throw const EventoServiceException(
+        'Inicia sesión para unirte al evento.',
+        code: 'user-not-authenticated',
+      );
+    }
+
+    final DocumentReference<Map<String, dynamic>> documento =
+        _firestore.collection('eventos').doc(eventoId);
+
+    try {
+      return await _firestore.runTransaction<List<String>>((
+        Transaction transaccion,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> snapshot =
+            await transaccion.get(documento);
+        if (!snapshot.exists) {
+          throw const EventoServiceException(
+            'El evento ya no existe.',
+            code: 'not-found',
+          );
+        }
+
+        final Evento evento = Evento.fromFirestore(snapshot);
+        if (evento.creadorUid == usuario.uid) {
+          throw const EventoServiceException(
+            'Eres el organizador de este evento.',
+            code: 'es-creador',
+          );
+        }
+        if (evento.inscritos.contains(usuario.uid)) {
+          return evento.inscritos;
+        }
+        if (!evento.fechaHora.isAfter(_reloj())) {
+          throw const EventoServiceException(
+            'Este evento ya finalizó.',
+            code: 'evento-finalizado',
+          );
+        }
+        // La verificación del cupo y la escritura van en la misma
+        // transacción: si otra persona se inscribe entre la lectura y la
+        // escritura, Firestore repite la transacción con los datos nuevos y
+        // esta comprobación vuelve a correr. Así nunca se supera el cupo.
+        if (evento.estaLleno) {
+          throw EventoLlenoException(evento.inscritos);
+        }
+
+        transaccion.update(documento, <String, dynamic>{
+          'inscritos': FieldValue.arrayUnion(<String>[usuario.uid]),
+        });
+        return <String>[...evento.inscritos, usuario.uid];
+      });
+    } on FirebaseException catch (error) {
+      throw EventoServiceException(
+        _mensajeParaErrorDeFirestore(error.code, inscribiendo: true),
+        code: error.code,
+      );
+    }
+  }
+
+  /// Retira al usuario autenticado del evento [eventoId] (HU-25) y devuelve
+  /// la lista de inscritos actualizada. Al quitar su UID de `inscritos`, su
+  /// cupo queda libre para otras personas.
+  ///
+  /// Igual que [unirseEvento], se hace en una transacción que comprueba que
+  /// haya sesión (`user-not-authenticated`), que el evento exista
+  /// (`not-found`) y no haya ocurrido (`evento-finalizado`), y que quien
+  /// sale no sea el organizador (`es-creador`). Si el usuario no estaba
+  /// inscrito no se escribe nada.
+  Future<List<String>> salirEvento(String eventoId) async {
+    final User? usuario = _auth.currentUser;
+    if (usuario == null) {
+      throw const EventoServiceException(
+        'Inicia sesión para salir del evento.',
+        code: 'user-not-authenticated',
+      );
+    }
+
+    final DocumentReference<Map<String, dynamic>> documento =
+        _firestore.collection('eventos').doc(eventoId);
+
+    try {
+      return await _firestore.runTransaction<List<String>>((
+        Transaction transaccion,
+      ) async {
+        final DocumentSnapshot<Map<String, dynamic>> snapshot =
+            await transaccion.get(documento);
+        if (!snapshot.exists) {
+          throw const EventoServiceException(
+            'El evento ya no existe.',
+            code: 'not-found',
+          );
+        }
+
+        final Evento evento = Evento.fromFirestore(snapshot);
+        if (evento.creadorUid == usuario.uid) {
+          throw const EventoServiceException(
+            'Eres el organizador de este evento.',
+            code: 'es-creador',
+          );
+        }
+        if (!evento.inscritos.contains(usuario.uid)) {
+          return evento.inscritos;
+        }
+        if (!evento.fechaHora.isAfter(_reloj())) {
+          throw const EventoServiceException(
+            'Este evento ya finalizó.',
+            code: 'evento-finalizado',
+          );
+        }
+
+        transaccion.update(documento, <String, dynamic>{
+          'inscritos': FieldValue.arrayRemove(<String>[usuario.uid]),
+        });
+        return <String>[
+          for (final String uid in evento.inscritos)
+            if (uid != usuario.uid) uid,
+        ];
+      });
+    } on FirebaseException catch (error) {
+      throw EventoServiceException(
+        _mensajeParaErrorDeFirestore(error.code, saliendo: true),
+        code: error.code,
+      );
+    }
+  }
+
+  /// Lee el estado actual del evento [eventoId] (incluidos sus inscritos y
+  /// los datos de su creador). La usa el detalle al abrirse, para no mostrar
+  /// una inscripción desactualizada. Lanza `not-found` si ya no existe.
+  Future<Evento> obtenerEvento(String eventoId) async {
+    final DocumentSnapshot<Map<String, dynamic>> snapshot;
+    try {
+      snapshot = await _firestore.collection('eventos').doc(eventoId).get();
+    } on FirebaseException catch (error) {
+      throw EventoServiceException(
+        _mensajeParaErrorDeFirestore(error.code),
+        code: error.code,
+      );
+    }
+    if (!snapshot.exists) {
+      throw const EventoServiceException(
+        'El evento ya no existe.',
+        code: 'not-found',
+      );
+    }
+
+    final Evento evento = Evento.fromFirestore(snapshot);
+    Map<String, dynamic>? perfil;
+    try {
+      perfil = await _leerPerfil(evento.creadorUid);
+    } on EventoServiceException {
+      perfil = null;
+    }
+    return evento.conPerfilDelCreador(perfil);
+  }
+
   /// Consulta los eventos disponibles: los que aún no han ocurrido
   /// (`fechaHora` a partir de [desde], por defecto ahora), del más próximo
   /// al más lejano. Cada evento indica si su creador es guía turístico y,
@@ -638,7 +857,12 @@ class EventoService {
     };
   }
 
-  String _mensajeParaErrorDeFirestore(String codigo, {bool creando = false}) {
+  String _mensajeParaErrorDeFirestore(
+    String codigo, {
+    bool creando = false,
+    bool inscribiendo = false,
+    bool saliendo = false,
+  }) {
     switch (codigo) {
       case 'unavailable':
       case 'network-request-failed':
@@ -646,6 +870,13 @@ class EventoService {
       case 'permission-denied':
         return 'No tienes permiso para realizar esta acción.';
       default:
+        if (inscribiendo) {
+          return 'No se pudo completar tu inscripción. Inténtalo de nuevo.';
+        }
+        if (saliendo) {
+          return 'No se pudo completar tu salida del evento. '
+              'Inténtalo de nuevo.';
+        }
         return creando
             ? 'No se pudo crear el evento. Inténtalo de nuevo.'
             : 'No se pudieron cargar los eventos. Inténtalo de nuevo.';

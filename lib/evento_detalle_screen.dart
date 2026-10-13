@@ -8,6 +8,7 @@ import 'editar_evento_screen.dart';
 import 'evento_service.dart';
 import 'form_styles.dart';
 import 'perfil_usuario_screen.dart';
+import 'widgets/aviso_error.dart';
 import 'widgets/evento_guia_estilo.dart';
 
 const List<String> _meses = <String>[
@@ -84,6 +85,8 @@ class EventoDetalleScreen extends StatefulWidget {
     required this.evento,
     this.abrirEnlace = abrirEnlaceExterno,
     this.cargarPerfil = cargarPerfilDeFirestore,
+    this.service,
+    this.uidUsuarioActual,
     super.key,
   });
 
@@ -95,6 +98,13 @@ class EventoDetalleScreen extends StatefulWidget {
   /// Lee el perfil del organizador (inyectable en pruebas).
   final CargarPerfil cargarPerfil;
 
+  /// Servicio de eventos para la inscripción (inyectable en pruebas).
+  final EventoService? service;
+
+  /// UID de quien ve el evento; por defecto, el usuario autenticado
+  /// (inyectable en pruebas).
+  final String? uidUsuarioActual;
+
   @override
   State<EventoDetalleScreen> createState() => _EventoDetalleScreenState();
 }
@@ -103,6 +113,71 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
   late Evento _evento;
   late Future<Map<String, dynamic>?> _perfilOrganizador;
   late Future<List<Map<String, dynamic>?>> _perfilesParticipantes;
+
+  /// Servicio de eventos; `null` si Firebase no está disponible (por
+  /// ejemplo, en pruebas que no lo inicializan): entonces no se verifica la
+  /// inscripción al abrir.
+  late final EventoService? _service = _crearServicio();
+
+  /// `true` mientras se guarda la inscripción (evita dobles toques).
+  bool _uniendose = false;
+
+  /// `true` mientras se guarda la salida del evento (evita dobles toques).
+  bool _saliendo = false;
+
+  /// `true` mientras se consulta el estado real del evento al abrirlo.
+  bool _verificando = false;
+
+  /// Mensaje si no se pudo consultar el estado real del evento.
+  String? _errorVerificacion;
+
+  /// `true` si el evento se eliminó (al abrirlo o al intentar unirse).
+  bool _eventoNoExiste = false;
+
+  EventoService? _crearServicio() {
+    final EventoService? inyectado = widget.service;
+    if (inyectado != null) return inyectado;
+    try {
+      return EventoService();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Consulta en Firestore el estado actual del evento (inscritos, cupo,
+  /// etc.), porque el evento recibido de la lista puede estar desactualizado:
+  /// por ejemplo, si el usuario se unió y volvió a abrir el detalle.
+  Future<void> _verificarEstado() async {
+    final EventoService? servicio = _service;
+    if (servicio == null) return;
+    if (mounted && !_verificando) {
+      setState(() {
+        _verificando = true;
+        _errorVerificacion = null;
+      });
+    }
+
+    try {
+      final Evento actual = await servicio.obtenerEvento(_evento.id);
+      if (!mounted) return;
+      setState(() {
+        _evento = actual;
+        _cargarParticipantes();
+      });
+    } on EventoServiceException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        if (error.code == 'not-found') {
+          _eventoNoExiste = true;
+        } else {
+          _errorVerificacion =
+              'No se pudo verificar tu inscripción. ${error.message}';
+        }
+      });
+    } finally {
+      if (mounted) setState(() => _verificando = false);
+    }
+  }
 
   @override
   void initState() {
@@ -121,6 +196,8 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
       return perfil;
     });
     _cargarParticipantes();
+    _verificando = _service != null;
+    _verificarEstado();
   }
 
   /// Lee el perfil de cada inscrito, en el mismo orden de `inscritos`.
@@ -150,12 +227,157 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     // TODO: pedir confirmación, eliminar el evento y volver al listado.
   }
 
+  /// Inscribe al usuario en el evento. Si funciona, la lista de
+  /// participantes y los botones se actualizan con lo guardado; si falla,
+  /// se informa y no cambia nada.
   Future<void> _unirseEvento() async {
-    // TODO: agregar el UID del usuario actual a `inscritos` del evento.
+    final EventoService? servicio = _service;
+    if (_uniendose || _verificando) return;
+    if (servicio == null) {
+      _mostrarError(
+        'No se pudo completar tu inscripción. Inténtalo de nuevo.',
+        reintentable: true,
+        reintentar: _unirseEvento,
+      );
+      return;
+    }
+    setState(() => _uniendose = true);
+
+    try {
+      final List<String> inscritos = await servicio.unirseEvento(_evento.id);
+      if (!mounted) return;
+      setState(() {
+        _evento = _evento.conInscritos(inscritos);
+        _cargarParticipantes();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('¡Te uniste a "${_evento.nombre}"!')),
+      );
+    } on EventoLlenoException catch (error) {
+      // Otra persona ocupó el último cupo: se muestra el estado real.
+      if (!mounted) return;
+      setState(() {
+        _evento = _evento.conInscritos(error.inscritos);
+        _cargarParticipantes();
+      });
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
+    } on EventoServiceException catch (error) {
+      if (!mounted) return;
+      if (error.code == 'not-found') {
+        setState(() => _eventoNoExiste = true);
+      }
+      _mostrarError(
+        error.message,
+        reintentable: !_erroresDefinitivos.contains(error.code),
+        reintentar: _unirseEvento,
+      );
+    } finally {
+      if (mounted) setState(() => _uniendose = false);
+    }
   }
 
+  /// Errores en los que reintentar no cambia el resultado.
+  static const Set<String> _erroresDefinitivos = <String>{
+    'not-found',
+    'es-creador',
+    'evento-finalizado',
+    'evento-lleno',
+    'user-not-authenticated',
+  };
+
+  /// Muestra [mensaje]; si [reintentable], con la acción "Reintentar" que
+  /// vuelve a ejecutar [reintentar].
+  void _mostrarError(
+    String mensaje, {
+    required bool reintentable,
+    required VoidCallback reintentar,
+  }) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(mensaje),
+        action: reintentable
+            ? SnackBarAction(label: 'Reintentar', onPressed: reintentar)
+            : null,
+      ),
+    );
+  }
+
+  /// Pide confirmación antes de salir del evento.
+  Future<bool> _confirmarSalida() async {
+    final bool? salir = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(
+          '¿Salir del evento?',
+          style: FormStyles.titulo(pequena: true),
+        ),
+        content: Text(
+          'Dejarás de aparecer en la lista de participantes y tu cupo '
+          'quedará libre para otras personas.',
+          style: FormStyles.subtitulo(pequena: true),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            key: const Key('confirmar-salir-evento'),
+            style: TextButton.styleFrom(foregroundColor: FormStyles.colorError),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Salir del evento'),
+          ),
+        ],
+      ),
+    );
+    return salir ?? false;
+  }
+
+  /// Retira al usuario del evento (HU-25) tras confirmarlo. Si funciona, la
+  /// lista de participantes y los cupos se actualizan con lo guardado y se
+  /// vuelve a ofrecer "Unirme"; si falla, se informa y no cambia nada.
   Future<void> _salirEvento() async {
-    // TODO: quitar el UID del usuario actual de `inscritos` del evento.
+    final EventoService? servicio = _service;
+    if (_saliendo || _verificando) return;
+    if (!await _confirmarSalida() || !mounted) return;
+    if (servicio == null) {
+      _mostrarError(
+        'No se pudo completar tu salida del evento. Inténtalo de nuevo.',
+        reintentable: true,
+        reintentar: _salirEvento,
+      );
+      return;
+    }
+    setState(() => _saliendo = true);
+
+    try {
+      final List<String> inscritos = await servicio.salirEvento(_evento.id);
+      if (!mounted) return;
+      setState(() {
+        _evento = _evento.conInscritos(inscritos);
+        _cargarParticipantes();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Saliste de "${_evento.nombre}". Tu cupo quedó disponible.',
+          ),
+        ),
+      );
+    } on EventoServiceException catch (error) {
+      if (!mounted) return;
+      if (error.code == 'not-found') {
+        setState(() => _eventoNoExiste = true);
+      }
+      _mostrarError(
+        error.message,
+        reintentable: !_erroresDefinitivos.contains(error.code),
+        reintentar: _salirEvento,
+      );
+    } finally {
+      if (mounted) setState(() => _saliendo = false);
+    }
   }
 
   void _abrirPerfil(String uid) {
@@ -179,9 +401,25 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
         usuarioActualUid != null && evento.inscritos.contains(usuarioActualUid);
     final bool finalizado = evento.fechaHora.isBefore(DateTime.now());
 
+    if (_eventoNoExiste) {
+      return const AvisoError(mensaje: 'Este evento ya no existe.');
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        if (_errorVerificacion != null && !esCreador) ...<Widget>[
+          AvisoError(mensaje: _errorVerificacion!),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              key: const Key('evento-reintentar-verificacion'),
+              onPressed: _verificarEstado,
+              child: const Text('Reintentar'),
+            ),
+          ),
+          const SizedBox(height: FormStyles.s8),
+        ],
         if (finalizado) ...<Widget>[
           const Center(child: _EtiquetaFinalizado()),
           const SizedBox(height: FormStyles.s16),
@@ -215,20 +453,56 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
               ),
             ],
           )
-        else if (!finalizado && estaInscrito)
+        else if (!finalizado && estaInscrito) ...<Widget>[
+          const _AvisoInscrito(),
+          const SizedBox(height: FormStyles.s12),
           OutlinedButton.icon(
             key: const Key('salir-evento'),
             style: FormStyles.botonSecundario(),
-            onPressed: _salirEvento,
-            icon: const Icon(Icons.logout_rounded, size: 18),
-            label: const Text('Salir'),
+            onPressed: _saliendo ? null : _salirEvento,
+            icon: _saliendo
+                ? const SizedBox(
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.logout_rounded, size: 18),
+            label: const Text('Salir del evento'),
+          ),
+        ] else if (!finalizado && _verificando)
+          FilledButton(
+            key: const Key('evento-verificando'),
+            style: FormStyles.botonPrimario(),
+            onPressed: null,
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                SizedBox(
+                  height: 16,
+                  width: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: FormStyles.s8),
+                Flexible(child: Text('Verificando inscripción…')),
+              ],
+            ),
           )
         else if (!finalizado)
           FilledButton(
             key: const Key('unirse-evento'),
             style: FormStyles.botonPrimario(),
-            onPressed: evento.estaLleno ? null : _unirseEvento,
-            child: Text(evento.estaLleno ? 'Evento lleno' : 'Unirse'),
+            onPressed: evento.estaLleno || _uniendose ? null : _unirseEvento,
+            child: _uniendose
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(evento.estaLleno ? 'Evento lleno' : 'Unirme'),
           ),
       ],
     );
@@ -240,6 +514,7 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
   /// En los tests, si Firebase todavía no fue inicializado, devuelve null
   /// para evitar que la pantalla falle.
   String? _obtenerUidUsuarioActual() {
+    if (widget.uidUsuarioActual != null) return widget.uidUsuarioActual;
     try {
       return FirebaseAuth.instance.currentUser?.uid;
     } on FirebaseException {
@@ -355,6 +630,10 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
                               '(${evento.inscritos.length}/${evento.cupoMaximo})',
                     style: FormStyles.etiqueta(),
                   ),
+                  if (evento.cuposDisponibles != null) ...<Widget>[
+                    const SizedBox(height: FormStyles.s4),
+                    _CuposDisponibles(restantes: evento.cuposDisponibles!),
+                  ],
                   const SizedBox(height: FormStyles.s8),
                   if (evento.inscritos.isEmpty)
                     Text(
@@ -388,6 +667,69 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
 }
 
 /// Etiqueta "Evento finalizado" para eventos cuya fecha ya pasó.
+/// Cupos que quedan en un evento con cupo máximo: "Quedan 3 cupos",
+/// "Queda 1 cupo" o "No quedan cupos disponibles".
+class _CuposDisponibles extends StatelessWidget {
+  const _CuposDisponibles({required this.restantes});
+
+  final int restantes;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool lleno = restantes == 0;
+    return Text(
+      switch (restantes) {
+        0 => 'No quedan cupos disponibles',
+        1 => 'Queda 1 cupo',
+        _ => 'Quedan $restantes cupos',
+      },
+      key: const Key('evento-cupos-disponibles'),
+      style: FormStyles.cuerpo(
+        size: 13,
+        weight: FontWeight.w600,
+        color: lleno ? FormStyles.colorError : AppTheme.azulPetroleo,
+      ),
+    );
+  }
+}
+
+/// Confirmación visible de que el usuario ya está inscrito en el evento.
+class _AvisoInscrito extends StatelessWidget {
+  const _AvisoInscrito();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('evento-inscrito'),
+      padding: const EdgeInsets.all(FormStyles.s12),
+      decoration: BoxDecoration(
+        color: AppTheme.verdeAzulado.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(FormStyles.radio),
+        border: Border.all(color: AppTheme.verdeAzulado.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(
+            Icons.check_circle_rounded,
+            color: AppTheme.verdeAzulado,
+            size: 20,
+          ),
+          const SizedBox(width: FormStyles.s8),
+          Expanded(
+            child: Text(
+              'Ya estás inscrito en este evento.',
+              style: FormStyles.cuerpo(
+                weight: FontWeight.w600,
+                color: AppTheme.azulPetroleo,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EtiquetaFinalizado extends StatelessWidget {
   const _EtiquetaFinalizado();
 
