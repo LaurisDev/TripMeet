@@ -144,6 +144,7 @@ class PerfilUsuarioScreen extends StatefulWidget {
     this.cargarPublicaciones = cargarPublicacionesDeFirestore,
     this.cargarResumenCalificaciones = cargarResumenDeFirestore,
     this.cargarResenas = cargarResenasDeFirestore,
+    this.servicioCalificaciones,
     super.key,
   });
 
@@ -169,6 +170,10 @@ class PerfilUsuarioScreen extends StatefulWidget {
   /// Lee las reseñas que recibió el usuario (inyectable en pruebas).
   final CargarResenas cargarResenas;
 
+  /// Servicio para calificar al usuario desde su perfil (inyectable en
+  /// pruebas). Si Firebase no está disponible, no se ofrece calificar.
+  final CalificacionUsuarioService? servicioCalificaciones;
+
   @override
   State<PerfilUsuarioScreen> createState() => _PerfilUsuarioScreenState();
 }
@@ -181,6 +186,74 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
   late Future<ResumenCalificaciones?> _calificaciones;
   late Future<List<ResenaRecibida>> _resenas;
 
+  /// Servicio de calificaciones; `null` si Firebase no está disponible.
+  late final CalificacionUsuarioService? _servicioCalificaciones =
+      _crearServicioCalificaciones();
+
+  /// `true` si el usuario actual ya calificó este perfil; `null` mientras
+  /// se consulta.
+  bool? _yaCalifique;
+
+  CalificacionUsuarioService? _crearServicioCalificaciones() {
+    final CalificacionUsuarioService? inyectado = widget.servicioCalificaciones;
+    if (inyectado != null) return inyectado;
+    try {
+      return CalificacionUsuarioService();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Se puede calificar el perfil de otra persona, con sesión iniciada.
+  bool get _puedeCalificar =>
+      !_esPropio &&
+      _uidActual != null &&
+      _uid.isNotEmpty &&
+      _servicioCalificaciones != null;
+
+  Future<void> _consultarSiYaCalifique() async {
+    final CalificacionUsuarioService? servicio = _servicioCalificaciones;
+    if (!_puedeCalificar || servicio == null) return;
+    final bool ya = await servicio.yaCalificoDesdePerfil(_uid);
+    if (mounted) setState(() => _yaCalifique = ya);
+  }
+
+  /// Abre el diálogo de reseña (estrellas, comentario y moderación) y, si
+  /// se publica, recarga la reputación y las reseñas del perfil.
+  Future<void> _calificar(String nombre) async {
+    final CalificacionUsuarioService? servicio = _servicioCalificaciones;
+    if (servicio == null) return;
+
+    final bool? publicada = await mostrarDialogoResena(
+      context,
+      nombre: nombre,
+      onPublicar: (ResenaEscrita resena) async {
+        try {
+          await servicio.calificarDesdePerfil(
+            calificadoUid: _uid,
+            calificacion: resena.estrellas,
+            comentario: resena.comentario,
+          );
+          return null;
+        } on CalificacionException catch (error) {
+          if (error.code == 'ya-calificado' && mounted) {
+            setState(() => _yaCalifique = true);
+          }
+          return error.message;
+        }
+      },
+    );
+    if (publicada != true || !mounted) return;
+
+    setState(() {
+      _yaCalifique = true;
+      _cargarReputacion();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Publicaste tu reseña sobre $nombre.')),
+    );
+  }
+
   /// `true` si el perfil es del usuario autenticado.
   bool get _esPropio => _uidActual != null && _uidActual == _uid;
 
@@ -191,6 +264,7 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
     _uid = widget.uid ?? _uidActual ?? '';
     _cargarPerfil();
     _cargarPublicaciones();
+    _consultarSiYaCalifique();
   }
 
   /// UID del usuario autenticado; `null` si no hay sesión o si Firebase no
@@ -205,8 +279,12 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
 
   void _cargarPerfil() {
     _perfil = widget.cargarPerfil(_uid);
-    // El promedio se vuelve a consultar cada vez que se carga el perfil, así
-    // refleja las calificaciones recién registradas.
+    _cargarReputacion();
+  }
+
+  /// El promedio y las reseñas se vuelven a consultar cada vez que se carga
+  /// el perfil o se publica una reseña, así reflejan lo recién registrado.
+  void _cargarReputacion() {
     _calificaciones = widget.cargarResumenCalificaciones(_uid);
     _resenas = Future<List<ResenaRecibida>>.sync(
       () => widget.cargarResenas(_uid),
@@ -371,11 +449,44 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
                 BuildContext context,
                 AsyncSnapshot<ResumenCalificaciones?> snapshot,
               ) {
-                final ResumenCalificaciones? resumen = snapshot.data;
-                if (resumen == null) return const SizedBox.shrink();
-                return _ResumenCalificacionesPerfil(resumen: resumen);
+                return _ReputacionPerfil(
+                  cargando: snapshot.connectionState != ConnectionState.done,
+                  // `null` al terminar = no se pudo leer (sin conexión...).
+                  resumen: snapshot.hasError ? null : snapshot.data,
+                );
               },
         ),
+        if (_puedeCalificar) ...<Widget>[
+          const SizedBox(height: FormStyles.s12),
+          if (_yaCalifique == true)
+            Row(
+              key: const Key('perfil-ya-calificado'),
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                const Icon(
+                  Icons.check_circle_rounded,
+                  size: 18,
+                  color: AppTheme.verdeAzulado,
+                ),
+                const SizedBox(width: FormStyles.s4),
+                Text(
+                  'Ya calificaste a este usuario',
+                  style: FormStyles.cuerpo(size: 13),
+                ),
+              ],
+            )
+          else
+            OutlinedButton.icon(
+              key: const Key('perfil-calificar'),
+              style: FormStyles.botonSecundario(),
+              // Mientras se consulta si ya lo calificó, no se ofrece aún.
+              onPressed: _yaCalifique == null
+                  ? null
+                  : () => _calificar(perfil.nombre),
+              icon: const Icon(Icons.star_outline_rounded, color: colorEstrella),
+              label: Text('Calificar a ${perfil.nombre}'),
+            ),
+        ],
         if (_esPropio) ...<Widget>[
           const SizedBox(height: FormStyles.s16),
           _BotonPreferencias(onTap: _abrirPreferencias),
@@ -574,16 +685,70 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
 
 /// Tarjeta superior: foto, nombre y rol. Los guías llevan un aro dorado y,
 /// si sus certificados están aprobados, la marca "Verificado".
-/// Promedio de calificaciones del usuario (HU-28): estrellas, "4,5" y
-/// cuántas calificaciones tiene, o un aviso si aún no tiene.
-class _ResumenCalificacionesPerfil extends StatelessWidget {
-  const _ResumenCalificacionesPerfil({required this.resumen});
+/// Reputación del usuario (HU-29): su calificación promedio con estrellas y
+/// cuántas reseñas tiene, para que otros miembros decidan si comparten un
+/// plan con él. Si aún no tiene reseñas, lo dice; si no se pudo leer, lo
+/// informa (no aparenta que no tiene reputación).
+class _ReputacionPerfil extends StatelessWidget {
+  const _ReputacionPerfil({required this.cargando, required this.resumen});
 
-  final ResumenCalificaciones resumen;
+  final bool cargando;
+
+  /// `null` si no se pudo leer.
+  final ResumenCalificaciones? resumen;
 
   @override
   Widget build(BuildContext context) {
-    final double? promedio = resumen.promedio;
+    final ResumenCalificaciones? datos = resumen;
+    final double? promedio = datos?.promedio;
+
+    final Widget contenido;
+    if (cargando) {
+      contenido = const SizedBox(
+        height: 20,
+        width: 20,
+        child: CircularProgressIndicator(strokeWidth: 2),
+      );
+    } else if (datos == null) {
+      contenido = Text(
+        'No se pudo cargar la reputación. Desliza hacia abajo para '
+        'reintentar.',
+        key: const Key('perfil-reputacion-error'),
+        textAlign: TextAlign.center,
+        style: FormStyles.ayuda(),
+      );
+    } else if (!datos.tieneCalificaciones || promedio == null) {
+      contenido = Text(
+        'Todavía no tiene reseñas.',
+        key: const Key('perfil-sin-reputacion'),
+        textAlign: TextAlign.center,
+        style: FormStyles.ayuda(),
+      );
+    } else {
+      contenido = Wrap(
+        alignment: WrapAlignment.center,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: FormStyles.s8,
+        runSpacing: FormStyles.s4,
+        children: <Widget>[
+          EstrellasPromedio(promedio: promedio, tamano: 22),
+          Text(
+            formatearPromedio(promedio),
+            key: const Key('perfil-promedio'),
+            style: FormStyles.cuerpo(
+              size: 16,
+              weight: FontWeight.w700,
+              color: AppTheme.azulPetroleo,
+            ),
+          ),
+          Text(
+            datos.total == 1 ? '(1 reseña)' : '(${datos.total} reseñas)',
+            key: const Key('perfil-total-resenas'),
+            style: FormStyles.cuerpo(size: 13),
+          ),
+        ],
+      );
+    }
 
     return Container(
       key: const Key('perfil-calificaciones'),
@@ -596,35 +761,24 @@ class _ResumenCalificacionesPerfil extends StatelessWidget {
         borderRadius: BorderRadius.circular(FormStyles.radio),
         border: Border.all(color: FormStyles.colorBorde),
       ),
-      child: !resumen.tieneCalificaciones || promedio == null
-          ? Text(
-              'Aún no tiene calificaciones.',
-              textAlign: TextAlign.center,
-              style: FormStyles.ayuda(),
-            )
-          : Wrap(
-              alignment: WrapAlignment.center,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: FormStyles.s8,
-              runSpacing: FormStyles.s4,
-              children: <Widget>[
-                EstrellasPromedio(promedio: promedio, tamano: 22),
-                Text(
-                  formatearPromedio(promedio),
-                  style: FormStyles.cuerpo(
-                    size: 16,
-                    weight: FontWeight.w700,
-                    color: AppTheme.azulPetroleo,
-                  ),
-                ),
-                Text(
-                  resumen.total == 1
-                      ? '(1 calificación)'
-                      : '(${resumen.total} calificaciones)',
-                  style: FormStyles.cuerpo(size: 13),
-                ),
-              ],
-            ),
+      child: Column(
+        children: <Widget>[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              const Icon(
+                Icons.workspace_premium_outlined,
+                size: 16,
+                color: AppTheme.verdeAzulado,
+              ),
+              const SizedBox(width: FormStyles.s4),
+              Text('Reputación', style: FormStyles.etiqueta()),
+            ],
+          ),
+          const SizedBox(height: FormStyles.s8),
+          contenido,
+        ],
+      ),
     );
   }
 }

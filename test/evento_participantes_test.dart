@@ -118,6 +118,11 @@ void main() {
 
     testWidgets('un guía aprobado muestra su perfil laboral y su carné, '
         'pero no los antecedentes', (WidgetTester tester) async {
+      // Pantalla alta: el perfil incluye el bloque de reputación (HU-29) y
+      // lo verificado queda más abajo.
+      tester.view.physicalSize = const Size(1080, 3200);
+      tester.view.devicePixelRatio = 1.5;
+      addTearDown(tester.view.reset);
       await _abrir(tester, _evento(inscritos: <String>['luis']));
 
       await tester.ensureVisible(find.text('luis'));
@@ -230,6 +235,11 @@ void main() {
 
     testWidgets('sin uid muestra el perfil propio con sus opciones',
         (WidgetTester tester) async {
+      // Pantalla alta: el perfil incluye el bloque de reputación (HU-29) y
+      // lo verificado queda más abajo.
+      tester.view.physicalSize = const Size(1080, 3200);
+      tester.view.devicePixelRatio = 1.5;
+      addTearDown(tester.view.reset);
       await abrir(tester);
 
       expect(find.text('ana'), findsOneWidget);

@@ -140,31 +140,11 @@ class CalificacionUsuarioService {
     required int? calificacion,
     required String? comentario,
   }) async {
-    final User? usuario = _auth.currentUser;
-    if (usuario == null) {
-      throw const CalificacionException(
-        'Inicia sesión para calificar.',
-        code: 'user-not-authenticated',
-      );
-    }
-    final String? errorCalificacion = validarCalificacion(calificacion);
-    if (errorCalificacion != null) {
-      throw CalificacionException(
-        errorCalificacion,
-        code: 'calificacion-invalida',
-      );
-    }
-    final String? errorComentario = validarComentario(comentario);
-    if (errorComentario != null) {
-      throw CalificacionException(errorComentario, code: 'comentario-invalido');
-    }
-    if (calificadoUid == usuario.uid) {
-      throw const CalificacionException(
-        'No puedes calificarte a ti mismo.',
-        code: 'auto-calificacion',
-      );
-    }
-    await _moderar(comentario!.trim());
+    final User usuario = await _validarAntesDePublicar(
+      calificadoUid: calificadoUid,
+      calificacion: calificacion,
+      comentario: comentario,
+    );
 
     final DocumentReference<Map<String, dynamic>> eventoRef = _firestore
         .collection('eventos')
@@ -219,7 +199,7 @@ class CalificacionUsuarioService {
           Resena(
             usuarioId: usuario.uid,
             nombreUsuario: nombreAutor,
-            comentario: comentario.trim(),
+            comentario: comentario!.trim(),
             calificacion: calificacion!.toDouble(),
             fecha: _reloj(),
             eventoId: eventoId,
@@ -232,6 +212,112 @@ class CalificacionUsuarioService {
         code: error.code,
       );
     }
+  }
+
+  /// Id de la reseña general que [autorUid] deja desde un perfil (sin
+  /// evento). Al ser fijo, solo puede haber una por persona.
+  static String idCalificacionDesdePerfil(String autorUid) =>
+      '${autorUid}_perfil';
+
+  /// Publica la reseña general del usuario autenticado sobre [calificadoUid]
+  /// desde su perfil, sin necesidad de haber compartido un evento.
+  ///
+  /// Aplica las mismas validaciones y la misma moderación que
+  /// [calificarUsuario] (sesión, 1 a 5 estrellas, comentario, no
+  /// calificarse a sí mismo) y, en una transacción, que no exista ya la
+  /// reseña general de este autor (`ya-calificado`): una por persona.
+  Future<void> calificarDesdePerfil({
+    required String calificadoUid,
+    required int? calificacion,
+    required String? comentario,
+  }) async {
+    final User usuario = await _validarAntesDePublicar(
+      calificadoUid: calificadoUid,
+      calificacion: calificacion,
+      comentario: comentario,
+    );
+    final DocumentReference<Map<String, dynamic>> calificacionRef = _resenasDe(
+      calificadoUid,
+    ).doc(idCalificacionDesdePerfil(usuario.uid));
+
+    try {
+      final String nombreAutor = await _nombreDe(usuario.uid);
+
+      await _firestore.runTransaction<void>((Transaction transaccion) async {
+        if ((await transaccion.get(calificacionRef)).exists) {
+          throw const CalificacionException(
+            'Ya calificaste a este usuario.',
+            code: 'ya-calificado',
+          );
+        }
+        transaccion.set(
+          calificacionRef,
+          Resena(
+            usuarioId: usuario.uid,
+            nombreUsuario: nombreAutor,
+            comentario: comentario!.trim(),
+            calificacion: calificacion!.toDouble(),
+            fecha: _reloj(),
+          ).toFirestore(),
+        );
+      });
+    } on FirebaseException catch (error) {
+      throw CalificacionException(
+        _mensajeParaErrorDeFirestore(error.code),
+        code: error.code,
+      );
+    }
+  }
+
+  /// `true` si el usuario autenticado ya dejó su reseña general (desde el
+  /// perfil) a [calificadoUid]. Si no se puede leer, `false`: el servidor
+  /// igual rechaza una segunda reseña.
+  Future<bool> yaCalificoDesdePerfil(String calificadoUid) async {
+    final String? autor = _auth.currentUser?.uid;
+    if (autor == null) return false;
+    try {
+      return (await _resenasDe(
+        calificadoUid,
+      ).doc(idCalificacionDesdePerfil(autor)).get()).exists;
+    } on FirebaseException {
+      return false;
+    }
+  }
+
+  /// Validaciones comunes antes de publicar cualquier reseña: sesión, 1 a 5
+  /// estrellas, comentario, no calificarse a sí mismo y moderación del
+  /// comentario. Devuelve el usuario autenticado.
+  Future<User> _validarAntesDePublicar({
+    required String calificadoUid,
+    required int? calificacion,
+    required String? comentario,
+  }) async {
+    final User? usuario = _auth.currentUser;
+    if (usuario == null) {
+      throw const CalificacionException(
+        'Inicia sesión para calificar.',
+        code: 'user-not-authenticated',
+      );
+    }
+    final String? errorCalificacion = validarCalificacion(calificacion);
+    if (errorCalificacion != null) {
+      throw CalificacionException(
+        errorCalificacion,
+        code: 'calificacion-invalida',
+      );
+    }
+    final String? errorComentario = validarComentario(comentario);
+    if (errorComentario != null) {
+      throw CalificacionException(errorComentario, code: 'comentario-invalido');
+    }
+    if (calificadoUid == usuario.uid) {
+      throw const CalificacionException(
+        'No puedes calificarte a ti mismo.',
+        code: 'auto-calificacion',
+      );
+    }
+    await _moderar(comentario!.trim());
+    return usuario;
   }
 
   /// Revisa [comentario] con el moderador. Bloquea si es ofensivo y también

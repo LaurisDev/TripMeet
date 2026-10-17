@@ -950,7 +950,7 @@ void main() {
 
       expect(find.byKey(const Key('perfil-calificaciones')), findsOneWidget);
       expect(find.text('4,5'), findsOneWidget);
-      expect(find.text('(2 calificaciones)'), findsOneWidget);
+      expect(find.text('(2 reseñas)'), findsOneWidget);
       expect(find.byIcon(Icons.star_half_rounded), findsOneWidget);
     });
 
@@ -960,7 +960,7 @@ void main() {
         const ResumenCalificaciones(promedio: null, total: 0),
       );
 
-      expect(find.text('Aún no tiene calificaciones.'), findsOneWidget);
+      expect(find.text('Todavía no tiene reseñas.'), findsOneWidget);
     });
 
     testWidgets('muestra las reseñas con autor, estrellas, comentario, '
@@ -1074,12 +1074,13 @@ void main() {
       expect(find.text('No se pudieron cargar las reseñas.'), findsOneWidget);
     });
 
-    testWidgets('si no se pudo leer, no muestra la sección', (
+    testWidgets('si no se pudo leer, lo informa en vez de ocultarla', (
       WidgetTester tester,
     ) async {
       await abrirPerfil(tester, null);
 
-      expect(find.byKey(const Key('perfil-calificaciones')), findsNothing);
+      expect(find.byKey(const Key('perfil-reputacion-error')), findsOneWidget);
+      expect(find.byKey(const Key('perfil-sin-reputacion')), findsNothing);
     });
   });
 }
