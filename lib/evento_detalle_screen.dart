@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'app_theme.dart';
 import 'calificacion_usuario_service.dart';
 import 'calificar_participantes.dart';
+import 'chat_evento_screen.dart';
 import 'editar_evento_screen.dart';
 import 'evento_service.dart';
 import 'form_styles.dart';
@@ -399,6 +400,15 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     );
   }
 
+  void _abrirChatEvento() {
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => ChatEventoScreen(evento: _evento),
+      ),
+    );
+  }
+
   /// Botones según quién mira el evento y su estado.
   Widget _buildAcciones(Evento evento, String? usuarioActualUid) {
     final bool esCreador =
@@ -537,7 +547,20 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
 
     return Scaffold(
       backgroundColor: AppTheme.crema,
-      appBar: AppBar(title: const Text('Evento')),
+      appBar: AppBar(
+        title: const Text('Evento'),
+        actions: <Widget>[
+          IconButton(
+            key: const Key('abrir-chat-evento'),
+            icon: const Icon(
+              Icons.chat_bubble_outline_rounded,
+              color: AppTheme.azulPetroleo,
+            ),
+            tooltip: 'Chat del evento',
+            onPressed: _abrirChatEvento,
+          ),
+        ],
+      ),
       body: SafeArea(
         child: ListView(
           padding: EdgeInsets.zero,
@@ -671,6 +694,28 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
                       service: widget.servicioCalificaciones,
                     ),
                   ],
+                  const SizedBox(height: FormStyles.s16),
+                  OutlinedButton.icon(
+                    key: const Key('boton-chat-evento-body'),
+                    style: FormStyles.botonSecundario().copyWith(
+                      side: const WidgetStatePropertyAll<BorderSide>(
+                        BorderSide(color: AppTheme.verdeAzulado, width: 1.5),
+                      ),
+                    ),
+                    onPressed: _abrirChatEvento,
+                    icon: const Icon(
+                      Icons.forum_outlined,
+                      size: 18,
+                      color: AppTheme.verdeAzulado,
+                    ),
+                    label: const Text(
+                      'Abrir chat del evento 💬',
+                      style: TextStyle(
+                        color: AppTheme.azulPetroleo,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: FormStyles.s24),
                   _buildAcciones(evento, usuarioActualUid),
                 ],
