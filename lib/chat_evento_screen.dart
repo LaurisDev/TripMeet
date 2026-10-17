@@ -1,10 +1,43 @@
+import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
+import 'cloudinary_service.dart';
 import 'evento_service.dart';
 import 'form_styles.dart';
+import 'guia_service.dart' show ArchivoLocal;
+import 'widgets/archivo_picker.dart';
+
+/// Modelo de datos para las opciones de una encuesta en el chat.
+class OpcionEncuesta {
+  const OpcionEncuesta({
+    required this.texto,
+    this.votosUids = const <String>[],
+  });
+
+  final String texto;
+  final List<String> votosUids;
+
+  factory OpcionEncuesta.fromMap(Map<String, dynamic> map) {
+    return OpcionEncuesta(
+      texto: map['texto'] as String? ?? '',
+      votosUids: (map['votosUids'] as List<dynamic>?)
+              ?.whereType<String>()
+              .toList() ??
+          const <String>[],
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return <String, dynamic>{
+      'texto': texto,
+      'votosUids': votosUids,
+    };
+  }
+}
 
 /// Modelo de datos para los mensajes del chat exclusivo de un evento.
 class MensajeEvento {
@@ -16,6 +49,13 @@ class MensajeEvento {
     this.fotoUsuario,
     required this.texto,
     required this.fecha,
+    this.imagenUrl,
+    this.editado = false,
+    this.fijado = false,
+    this.esEncuesta = false,
+    this.preguntaEncuesta,
+    this.opcionesEncuesta = const <OpcionEncuesta>[],
+    this.reacciones = const <String, List<String>>{},
   });
 
   final String id;
@@ -25,12 +65,44 @@ class MensajeEvento {
   final String? fotoUsuario;
   final String texto;
   final DateTime fecha;
+  final String? imagenUrl;
+  final bool editado;
+  final bool fijado;
+
+  // Encuestas
+  final bool esEncuesta;
+  final String? preguntaEncuesta;
+  final List<OpcionEncuesta> opcionesEncuesta;
+
+  // Reacciones { "❤️": ["uid1", "uid2"], "👍": ["uid3"] }
+  final Map<String, List<String>> reacciones;
 
   factory MensajeEvento.fromFirestore(
     DocumentSnapshot<Map<String, dynamic>> doc,
     String eventoId,
   ) {
     final Map<String, dynamic> datos = doc.data() ?? <String, dynamic>{};
+
+    final List<dynamic>? opcionesRaw =
+        datos['opcionesEncuesta'] as List<dynamic>?;
+    final List<OpcionEncuesta> opciones = opcionesRaw != null
+        ? opcionesRaw
+            .whereType<Map<String, dynamic>>()
+            .map(OpcionEncuesta.fromMap)
+            .toList()
+        : const <OpcionEncuesta>[];
+
+    final Map<String, dynamic>? reaccionesRaw =
+        datos['reacciones'] as Map<String, dynamic>?;
+    final Map<String, List<String>> reaccionesMap = <String, List<String>>{};
+    if (reaccionesRaw != null) {
+      reaccionesRaw.forEach((String key, dynamic value) {
+        if (value is List) {
+          reaccionesMap[key] = value.whereType<String>().toList();
+        }
+      });
+    }
+
     return MensajeEvento(
       id: doc.id,
       eventoId: eventoId,
@@ -39,6 +111,13 @@ class MensajeEvento {
       fotoUsuario: datos['fotoUsuario'] as String?,
       texto: datos['texto'] as String? ?? '',
       fecha: (datos['fecha'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      imagenUrl: datos['imagenUrl'] as String?,
+      editado: datos['editado'] as bool? ?? false,
+      fijado: datos['fijado'] as bool? ?? false,
+      esEncuesta: datos['esEncuesta'] as bool? ?? false,
+      preguntaEncuesta: datos['preguntaEncuesta'] as String?,
+      opcionesEncuesta: opciones,
+      reacciones: reaccionesMap,
     );
   }
 
@@ -49,22 +128,32 @@ class MensajeEvento {
       if (fotoUsuario != null) 'fotoUsuario': fotoUsuario,
       'texto': texto,
       'fecha': Timestamp.fromDate(fecha),
+      if (imagenUrl != null) 'imagenUrl': imagenUrl,
+      'editado': editado,
+      'fijado': fijado,
+      'esEncuesta': esEncuesta,
+      if (preguntaEncuesta != null) 'preguntaEncuesta': preguntaEncuesta,
+      if (esEncuesta)
+        'opcionesEncuesta': opcionesEncuesta.map((op) => op.toMap()).toList(),
+      'reacciones': reacciones,
     };
   }
 }
 
-/// Pantalla moderna e innovadora de Chat exclusivo para los participantes de un Evento.
+/// Pantalla moderna, completa e innovadora de Chat para los asistentes a un Evento.
 class ChatEventoScreen extends StatefulWidget {
   const ChatEventoScreen({
     required this.evento,
     this.firestore,
     this.auth,
+    this.cloudinary,
     super.key,
   });
 
   final Evento evento;
   final FirebaseFirestore? firestore;
   final FirebaseAuth? auth;
+  final CloudinaryService? cloudinary;
 
   @override
   State<ChatEventoScreen> createState() => _ChatEventoScreenState();
@@ -74,11 +163,14 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
   late final FirebaseFirestore _firestore =
       widget.firestore ?? FirebaseFirestore.instance;
   late final FirebaseAuth _auth = widget.auth ?? FirebaseAuth.instance;
+  late final CloudinaryService _cloudinary =
+      widget.cloudinary ?? CloudinaryService();
 
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
   bool _enviando = false;
+  bool _subiendoFoto = false;
 
   @override
   void dispose() {
@@ -102,7 +194,6 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
     });
   }
 
-  /// Auto-scroll suave al final del chat.
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
@@ -115,11 +206,10 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
     });
   }
 
-  /// Envía un mensaje a la subcolección `eventos/{eventoId}/mensajes`.
+  /// Envía un mensaje de texto.
   Future<void> _enviarMensaje([String? textoPersonalizado]) async {
     final String texto = (textoPersonalizado ?? _textController.text).trim();
 
-    // Criterio de Aceptación: No permite mensajes vacíos.
     if (texto.isEmpty || _enviando) return;
 
     final User? usuario = _auth.currentUser;
@@ -166,6 +256,352 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
     } finally {
       if (mounted) setState(() => _enviando = false);
     }
+  }
+
+  /// Permite seleccionar y enviar una fotografía al chat del evento.
+  Future<void> _adjuntarFoto() async {
+    final List<ArchivoLocal> seleccionados = await seleccionarArchivos(
+      extensiones: const <String>['jpg', 'jpeg', 'png', 'webp'],
+    );
+
+    if (seleccionados.isEmpty) return;
+    final ArchivoLocal archivo = seleccionados.first;
+    final Uint8List bytes = archivo.bytes;
+
+    if (bytes.isEmpty) return;
+
+    final User? usuario = _auth.currentUser;
+    if (usuario == null) return;
+
+    setState(() => _subiendoFoto = true);
+
+    try {
+      final CloudinarySubida subida = await _cloudinary.subirImagen(
+        bytes: bytes,
+        nombreArchivo: archivo.nombre,
+        folder: 'tripmeet/chat_eventos',
+      );
+
+      final String nombre = usuario.displayName ??
+          (usuario.email?.split('@').first) ??
+          'Viajero';
+
+      final MensajeEvento mensajeFoto = MensajeEvento(
+        id: '',
+        eventoId: widget.evento.id,
+        usuarioId: usuario.uid,
+        nombreUsuario: nombre,
+        fotoUsuario: usuario.photoURL,
+        texto: '📷 Fotografía enviada',
+        imagenUrl: subida.secureUrl,
+        fecha: DateTime.now(),
+      );
+
+      await _firestore
+          .collection('eventos')
+          .doc(widget.evento.id)
+          .collection('mensajes')
+          .add(mensajeFoto.toFirestore());
+
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al subir la imagen: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _subiendoFoto = false);
+    }
+  }
+
+  /// Diálogo para crear una nueva Encuesta interactiva en el grupo.
+  void _mostrarDialogoCrearEncuesta() {
+    final TextEditingController preguntaController = TextEditingController();
+    final List<TextEditingController> opcionesControllers = <TextEditingController>[
+      TextEditingController(),
+      TextEditingController(),
+    ];
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(FormStyles.radio),
+              ),
+              title: const Row(
+                children: <Widget>[
+                  Icon(Icons.poll_rounded, color: AppTheme.verdeAzulado),
+                  SizedBox(width: 8),
+                  Text('Crear Encuesta'),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    TextField(
+                      controller: preguntaController,
+                      decoration: const InputDecoration(
+                        labelText: 'Pregunta de la encuesta',
+                        hintText: 'Ej: ¿A qué hora nos vemos?',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ...List.generate(opcionesControllers.length, (int index) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: TextField(
+                          controller: opcionesControllers[index],
+                          decoration: InputDecoration(
+                            labelText: 'Opción ${index + 1}',
+                            hintText: 'Escribe la opción',
+                          ),
+                        ),
+                      );
+                    }),
+                    if (opcionesControllers.length < 4)
+                      TextButton.icon(
+                        onPressed: () {
+                          setDialogState(() {
+                            opcionesControllers.add(TextEditingController());
+                          });
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Agregar otra opción'),
+                      ),
+                  ],
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.azulPetroleo,
+                  ),
+                  onPressed: () async {
+                    final String pregunta = preguntaController.text.trim();
+                    final List<OpcionEncuesta> opciones = opcionesControllers
+                        .map((c) => OpcionEncuesta(texto: c.text.trim()))
+                        .where((op) => op.texto.isNotEmpty)
+                        .toList();
+
+                    if (pregunta.isEmpty || opciones.length < 2) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Ingresa una pregunta y al menos 2 opciones.',
+                          ),
+                        ),
+                      );
+                      return;
+                    }
+
+                    final User? usuario = _auth.currentUser;
+                    if (usuario == null) return;
+
+                    final String nombre = usuario.displayName ??
+                        (usuario.email?.split('@').first) ??
+                        'Viajero';
+
+                    final MensajeEvento mensajeEncuesta = MensajeEvento(
+                      id: '',
+                      eventoId: widget.evento.id,
+                      usuarioId: usuario.uid,
+                      nombreUsuario: nombre,
+                      texto: '📊 Encuesta: $pregunta',
+                      fecha: DateTime.now(),
+                      esEncuesta: true,
+                      preguntaEncuesta: pregunta,
+                      opcionesEncuesta: opciones,
+                    );
+
+                    await _firestore
+                        .collection('eventos')
+                        .doc(widget.evento.id)
+                        .collection('mensajes')
+                        .add(mensajeEncuesta.toFirestore());
+
+                    if (mounted) {
+                      Navigator.of(dialogContext).pop();
+                      _scrollToBottom();
+                    }
+                  },
+                  child: const Text('Publicar encuesta'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Permite a los usuarios votar en una encuesta.
+  Future<void> _votarEncuesta(
+    MensajeEvento mensaje,
+    int opcionIndex,
+  ) async {
+    final User? usuario = _auth.currentUser;
+    if (usuario == null) return;
+
+    final List<OpcionEncuesta> nuevasOpciones = <OpcionEncuesta>[];
+    for (int i = 0; i < mensaje.opcionesEncuesta.length; i++) {
+      final OpcionEncuesta op = mensaje.opcionesEncuesta[i];
+      final List<String> nuevosVotos = List<String>.from(op.votosUids);
+
+      if (i == opcionIndex) {
+        if (!nuevosVotos.contains(usuario.uid)) {
+          nuevosVotos.add(usuario.uid);
+        }
+      } else {
+        nuevosVotos.remove(usuario.uid);
+      }
+      nuevasOpciones.add(
+        OpcionEncuesta(texto: op.texto, votosUids: nuevosVotos),
+      );
+    }
+
+    await _firestore
+        .collection('eventos')
+        .doc(widget.evento.id)
+        .collection('mensajes')
+        .doc(mensaje.id)
+        .update(<String, dynamic>{
+      'opcionesEncuesta': nuevasOpciones.map((op) => op.toMap()).toList(),
+    });
+  }
+
+  /// Permite editar un mensaje propio.
+  void _editarMensaje(MensajeEvento mensaje) {
+    final TextEditingController editController =
+        TextEditingController(text: mensaje.texto);
+
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Editar mensaje'),
+          content: TextField(
+            controller: editController,
+            maxLines: null,
+            decoration: const InputDecoration(
+              labelText: 'Mensaje',
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final String nuevoTexto = editController.text.trim();
+                if (nuevoTexto.isEmpty) return;
+
+                await _firestore
+                    .collection('eventos')
+                    .doc(widget.evento.id)
+                    .collection('mensajes')
+                    .doc(mensaje.id)
+                    .update(<String, dynamic>{
+                  'texto': nuevoTexto,
+                  'editado': true,
+                });
+
+                if (mounted) Navigator.of(dialogContext).pop();
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Permite eliminar un mensaje propio.
+  Future<void> _eliminarMensaje(MensajeEvento mensaje) async {
+    final bool? confirmar = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('Eliminar mensaje'),
+        content: const Text(
+          '¿Estás seguro de que deseas eliminar este mensaje?',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar == true) {
+      await _firestore
+          .collection('eventos')
+          .doc(widget.evento.id)
+          .collection('mensajes')
+          .doc(mensaje.id)
+          .delete();
+    }
+  }
+
+  /// Fijar/Desfijar anuncio importante del organizador.
+  Future<void> _alternarFijarMensaje(MensajeEvento mensaje) async {
+    await _firestore
+        .collection('eventos')
+        .doc(widget.evento.id)
+        .collection('mensajes')
+        .doc(mensaje.id)
+        .update(<String, dynamic>{'fijado': !mensaje.fijado});
+  }
+
+  /// Reaccionar a un mensaje con emoji.
+  Future<void> _reaccionarMensaje(
+    MensajeEvento mensaje,
+    String emoji,
+  ) async {
+    final User? usuario = _auth.currentUser;
+    if (usuario == null) return;
+
+    final Map<String, List<String>> reacciones =
+        Map<String, List<String>>.from(mensaje.reacciones);
+
+    final List<String> usuariosEmoji =
+        List<String>.from(reacciones[emoji] ?? <String>[]);
+
+    if (usuariosEmoji.contains(usuario.uid)) {
+      usuariosEmoji.remove(usuario.uid);
+      if (usuariosEmoji.isEmpty) {
+        reacciones.remove(emoji);
+      } else {
+        reacciones[emoji] = usuariosEmoji;
+      }
+    } else {
+      usuariosEmoji.add(usuario.uid);
+      reacciones[emoji] = usuariosEmoji;
+    }
+
+    await _firestore
+        .collection('eventos')
+        .doc(widget.evento.id)
+        .collection('mensajes')
+        .doc(mensaje.id)
+        .update(<String, dynamic>{'reacciones': reacciones});
   }
 
   @override
@@ -227,6 +663,13 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
             ),
           ],
         ),
+        actions: <Widget>[
+          IconButton(
+            icon: const Icon(Icons.poll_rounded, color: AppTheme.azulPetroleo),
+            tooltip: 'Crear encuesta',
+            onPressed: _mostrarDialogoCrearEncuesta,
+          ),
+        ],
       ),
       body: SafeArea(
         child: Column(
@@ -291,6 +734,10 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
                   final List<MensajeEvento> mensajes =
                       snapshot.data ?? <MensajeEvento>[];
 
+                  final MensajeEvento? mensajeFijado = mensajes
+                      .where((m) => m.fijado)
+                      .lastOrNull;
+
                   if (mensajes.isEmpty) {
                     return Center(
                       child: Padding(
@@ -319,7 +766,7 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Coordina detalles, hora de encuentro y preguntas con los demás asistentes al evento.',
+                              'Coordina detalles, hora de encuentro, fotos y encuestas con los demás asistentes.',
                               textAlign: TextAlign.center,
                               style: FormStyles.ayuda(),
                             ),
@@ -331,31 +778,68 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
 
                   _scrollToBottom();
 
-                  return ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: FormStyles.s16,
-                      vertical: FormStyles.s8,
-                    ),
-                    itemCount: mensajes.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      final MensajeEvento msg = mensajes[index];
-                      final bool esPropio = usuarioActualUid != null &&
-                          msg.usuarioId == usuarioActualUid;
-                      return _BurbujaMensaje(
-                        mensaje: msg,
-                        esPropio: esPropio,
-                      );
-                    },
+                  return Column(
+                    children: <Widget>[
+                      if (mensajeFijado != null)
+                        _buildBannerMensajeFijado(mensajeFijado),
+                      Expanded(
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: FormStyles.s16,
+                            vertical: FormStyles.s8,
+                          ),
+                          itemCount: mensajes.length,
+                          itemBuilder: (BuildContext context, int index) {
+                            final MensajeEvento msg = mensajes[index];
+                            final bool esPropio = usuarioActualUid != null &&
+                                msg.usuarioId == usuarioActualUid;
+                            final bool esOrganizador = usuarioActualUid != null &&
+                                widget.evento.creadorUid == usuarioActualUid;
+
+                            return _BurbujaMensaje(
+                              mensaje: msg,
+                              esPropio: esPropio,
+                              esOrganizador: esOrganizador,
+                              uidActual: usuarioActualUid,
+                              onEditar: () => _editarMensaje(msg),
+                              onEliminar: () => _eliminarMensaje(msg),
+                              onFijar: () => _alternarFijarMensaje(msg),
+                              onReaccionar: (emoji) =>
+                                  _reaccionarMensaje(msg, emoji),
+                              onVotarEncuesta: (opIndex) =>
+                                  _votarEncuesta(msg, opIndex),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),
             ),
 
-            // Sugerencias rápidas de coordinación
-            _buildSugerenciasRapidas(),
+            if (_subiendoFoto)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Subiendo fotografía...',
+                      style: TextStyle(fontSize: 12, color: AppTheme.textoSuave),
+                    ),
+                  ],
+                ),
+              ),
 
-            // Barra inferior de entrada de texto
+            _buildSugerenciasRapidas(),
             _buildInputArea(),
           ],
         ),
@@ -363,7 +847,60 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
     );
   }
 
-  /// Chips rápidos para coordinación ágil entre participantes.
+  Widget _buildBannerMensajeFijado(MensajeEvento mensaje) {
+    return Container(
+      margin: const EdgeInsets.symmetric(
+        horizontal: FormStyles.s16,
+        vertical: 4,
+      ),
+      padding: const EdgeInsets.symmetric(
+        horizontal: FormStyles.s12,
+        vertical: 8,
+      ),
+      decoration: BoxDecoration(
+        color: AppTheme.naranjaQuemado.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(FormStyles.radio),
+        border: Border.all(
+          color: AppTheme.naranjaQuemado.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(
+            Icons.push_pin_rounded,
+            size: 16,
+            color: AppTheme.naranjaQuemado,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  'Anuncio fijado por ${mensaje.nombreUsuario}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: AppTheme.naranjaQuemado,
+                  ),
+                ),
+                Text(
+                  mensaje.texto,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppTheme.azulPetroleo,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSugerenciasRapidas() {
     if (_enviando) return const SizedBox.shrink();
 
@@ -419,10 +956,9 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
     );
   }
 
-  /// Barra de entrada de mensajes fija en la parte inferior.
   Widget _buildInputArea() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: <BoxShadow>[
@@ -435,6 +971,14 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
       ),
       child: Row(
         children: <Widget>[
+          IconButton(
+            icon: const Icon(
+              Icons.photo_camera_rounded,
+              color: AppTheme.verdeAzulado,
+            ),
+            tooltip: 'Enviar foto',
+            onPressed: _subiendoFoto ? null : _adjuntarFoto,
+          ),
           Expanded(
             child: TextField(
               controller: _textController,
@@ -475,7 +1019,7 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           Material(
             color: _enviando ? AppTheme.verdeSuave : AppTheme.azulPetroleo,
             shape: const CircleBorder(),
@@ -498,15 +1042,29 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
   }
 }
 
-/// Burbuja estilizada de mensaje para la lista de chat.
+/// Burbuja estilizada de mensaje para la lista de chat con reacciones, encuestas y fotos.
 class _BurbujaMensaje extends StatelessWidget {
   const _BurbujaMensaje({
     required this.mensaje,
     required this.esPropio,
+    required this.esOrganizador,
+    required this.uidActual,
+    required this.onEditar,
+    required this.onEliminar,
+    required this.onFijar,
+    required this.onReaccionar,
+    required this.onVotarEncuesta,
   });
 
   final MensajeEvento mensaje;
   final bool esPropio;
+  final bool esOrganizador;
+  final String? uidActual;
+  final VoidCallback onEditar;
+  final VoidCallback onEliminar;
+  final VoidCallback onFijar;
+  final ValueChanged<String> onReaccionar;
+  final ValueChanged<int> onVotarEncuesta;
 
   String _formatearHora(DateTime fecha) {
     final String hora = fecha.hour.toString().padLeft(2, '0');
@@ -514,98 +1072,143 @@ class _BurbujaMensaje extends StatelessWidget {
     return '$hora:$minuto';
   }
 
+  void _mostrarOpcionesMensaje(BuildContext context) {
+    showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              // Tira de reacciones rápidas con Emojis
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: <String>['👍', '❤️', '🔥', '😂', '😮'].map((
+                    String emoji,
+                  ) {
+                    return InkWell(
+                      onTap: () {
+                        Navigator.pop(context);
+                        onReaccionar(emoji);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: const BoxDecoration(
+                          color: AppTheme.crema,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(emoji, style: const TextStyle(fontSize: 22)),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const Divider(),
+              if (esPropio && !mensaje.esEncuesta)
+                ListTile(
+                  leading: const Icon(
+                    Icons.edit_outlined,
+                    color: AppTheme.verdeAzulado,
+                  ),
+                  title: const Text('Editar mensaje'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onEditar();
+                  },
+                ),
+              if (esPropio)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  title: const Text('Eliminar mensaje'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onEliminar();
+                  },
+                ),
+              if (esOrganizador)
+                ListTile(
+                  leading: Icon(
+                    mensaje.fijado
+                        ? Icons.push_pin_outlined
+                        : Icons.push_pin_rounded,
+                    color: AppTheme.naranjaQuemado,
+                  ),
+                  title: Text(
+                    mensaje.fijado ? 'Desfijar anuncio' : 'Fijar como anuncio',
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    onFijar();
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (esPropio) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Container(
-          margin: const EdgeInsets.only(left: 48, right: 4, top: 4, bottom: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: AppTheme.azulPetroleo,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(16),
-              topRight: Radius.circular(16),
-              bottomLeft: Radius.circular(16),
-              bottomRight: Radius.circular(4),
-            ),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: <Widget>[
-              Text(
-                mensaje.texto,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  height: 1.3,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _formatearHora(mensaje.fecha),
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.7),
-                  fontSize: 10,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+    final String? fotoUrl = mensaje.imagenUrl;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          CircleAvatar(
-            radius: 14,
-            backgroundColor: AppTheme.verdeAzulado,
-            child: Text(
-              mensaje.nombreUsuario.isNotEmpty
-                  ? mensaje.nombreUsuario[0].toUpperCase()
-                  : 'V',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
+    return GestureDetector(
+      onLongPress: () => _mostrarOpcionesMensaje(context),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment:
+              esPropio ? MainAxisAlignment.end : MainAxisAlignment.start,
+          children: <Widget>[
+            if (!esPropio) ...<Widget>[
+              CircleAvatar(
+                radius: 14,
+                backgroundColor: AppTheme.verdeAzulado,
+                child: Text(
+                  mensaje.nombreUsuario.isNotEmpty
+                      ? mensaje.nombreUsuario[0].toUpperCase()
+                      : 'V',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerLeft,
+              const SizedBox(width: 8),
+            ],
+            Flexible(
               child: Container(
-                margin: const EdgeInsets.only(right: 48),
+                margin: EdgeInsets.only(
+                  left: esPropio ? 48 : 0,
+                  right: esPropio ? 4 : 48,
+                ),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 14,
                   vertical: 10,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(4),
-                    topRight: Radius.circular(16),
-                    bottomLeft: Radius.circular(16),
-                    bottomRight: Radius.circular(16),
+                  color: esPropio ? AppTheme.azulPetroleo : Colors.white,
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(16),
+                    topRight: const Radius.circular(16),
+                    bottomLeft: Radius.circular(esPropio ? 16 : 4),
+                    bottomRight: Radius.circular(esPropio ? 4 : 16),
                   ),
-                  border: Border.all(
-                    color: AppTheme.verdeAzulado.withValues(alpha: 0.15),
-                  ),
+                  border: esPropio
+                      ? null
+                      : Border.all(
+                          color: AppTheme.verdeAzulado.withValues(alpha: 0.15),
+                        ),
                   boxShadow: <BoxShadow>[
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.03),
+                      color: Colors.black.withValues(alpha: 0.04),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -614,38 +1217,238 @@ class _BurbujaMensaje extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Text(
-                      mensaje.nombreUsuario,
-                      style: const TextStyle(
-                        color: AppTheme.verdeAzulado,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+                    if (!esPropio) ...<Widget>[
+                      Text(
+                        mensaje.nombreUsuario,
+                        style: const TextStyle(
+                          color: AppTheme.verdeAzulado,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
+                      const SizedBox(height: 3),
+                    ],
+
+                    // Fotografía en el chat
+                    if (fotoUrl != null) ...<Widget>[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          constraints: const BoxConstraints(maxHeight: 220),
+                          child: Image.network(
+                            fotoUrl,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            loadingBuilder: (BuildContext context, Widget child,
+                                ImageChunkEvent? progress) {
+                              if (progress == null) return child;
+                              return Container(
+                                height: 150,
+                                color: AppTheme.crema,
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+
+                    // Encuesta interactiva
+                    if (mensaje.esEncuesta) ...<Widget>[
+                      _buildWidgetEncuesta(context),
+                    ] else ...<Widget>[
+                      Text(
+                        mensaje.texto,
+                        style: TextStyle(
+                          color: esPropio ? Colors.white : AppTheme.azulPetroleo,
+                          fontSize: 14,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          _formatearHora(mensaje.fecha),
+                          style: TextStyle(
+                            color: esPropio
+                                ? Colors.white.withValues(alpha: 0.7)
+                                : AppTheme.textoSuave.withValues(alpha: 0.6),
+                            fontSize: 10,
+                          ),
+                        ),
+                        if (mensaje.editado) ...<Widget>[
+                          const SizedBox(width: 4),
+                          Text(
+                            '(editado)',
+                            style: TextStyle(
+                              color: esPropio
+                                  ? Colors.white.withValues(alpha: 0.7)
+                                  : AppTheme.textoSuave.withValues(alpha: 0.6),
+                              fontSize: 9,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      mensaje.texto,
-                      style: const TextStyle(
-                        color: AppTheme.azulPetroleo,
-                        fontSize: 14,
-                        height: 1.3,
+
+                    // Badge de reacciones con Emojis
+                    if (mensaje.reacciones.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: mensaje.reacciones.entries.map((
+                          MapEntry<String, List<String>> entry,
+                        ) {
+                          final bool yaVoto = uidActual != null &&
+                              entry.value.contains(uidActual);
+                          return InkWell(
+                            onTap: () => onReaccionar(entry.key),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: yaVoto
+                                    ? AppTheme.verdeAzulado.withValues(
+                                        alpha: 0.2,
+                                      )
+                                    : Colors.grey.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '${entry.key} ${entry.value.length}',
+                                style: const TextStyle(fontSize: 11),
+                              ),
+                            ),
+                          );
+                        }).toList(),
                       ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Renderiza el widget interactivo de Encuestas dentro de la burbuja.
+  Widget _buildWidgetEncuesta(BuildContext context) {
+    int totalVotos = 0;
+    for (final OpcionEncuesta op in mensaje.opcionesEncuesta) {
+      totalVotos += op.votosUids.length;
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          mensaje.preguntaEncuesta ?? 'Encuesta del grupo',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: esPropio ? Colors.white : AppTheme.azulPetroleo,
+            fontSize: 14.5,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...List.generate(mensaje.opcionesEncuesta.length, (int index) {
+          final OpcionEncuesta op = mensaje.opcionesEncuesta[index];
+          final bool yaVoto =
+              uidActual != null && op.votosUids.contains(uidActual);
+          final double porcentaje = totalVotos == 0
+              ? 0.0
+              : op.votosUids.length / totalVotos.toDouble();
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: InkWell(
+              onTap: () => onVotarEncuesta(index),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: yaVoto
+                      ? AppTheme.verdeAzulado.withValues(alpha: 0.2)
+                      : (esPropio
+                          ? Colors.white.withValues(alpha: 0.15)
+                          : AppTheme.crema),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: yaVoto
+                        ? AppTheme.verdeAzulado
+                        : AppTheme.verdeSuave.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: <Widget>[
+                        Text(
+                          op.texto,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight:
+                                yaVoto ? FontWeight.bold : FontWeight.normal,
+                            color: esPropio
+                                ? Colors.white
+                                : AppTheme.azulPetroleo,
+                          ),
+                        ),
+                        Text(
+                          '${(porcentaje * 100).toInt()}%',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: esPropio
+                                ? Colors.white.withValues(alpha: 0.8)
+                                : AppTheme.textoSuave,
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      _formatearHora(mensaje.fecha),
-                      style: TextStyle(
-                        color: AppTheme.textoSuave.withValues(alpha: 0.6),
-                        fontSize: 10,
-                      ),
+                    LinearProgressIndicator(
+                      value: porcentaje,
+                      backgroundColor: esPropio
+                          ? Colors.white.withValues(alpha: 0.2)
+                          : Colors.grey.shade300,
+                      color: AppTheme.verdeAzulado,
+                      minHeight: 4,
                     ),
                   ],
                 ),
               ),
             ),
+          );
+        }),
+        Text(
+          'Total: $totalVotos votos',
+          style: TextStyle(
+            fontSize: 10.5,
+            color: esPropio
+                ? Colors.white.withValues(alpha: 0.7)
+                : AppTheme.textoSuave,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
