@@ -29,6 +29,7 @@ void main() {
       lugar: 'Guatavita, Cundinamarca',
       fechaHora: DateTime.now().add(const Duration(days: 2)),
       fechaCreacion: DateTime.now(),
+      inscritos: const <String>['user_123'], // 'user_123' es participante unido
     );
   });
 
@@ -103,5 +104,33 @@ void main() {
       snapshot.docs.first.data()['texto'],
       equals('¡Hola a todos! ¿A qué hora nos vemos?'),
     );
+  });
+
+  testWidgets('Muestra banner bloqueado a usuarios no inscritos',
+      (WidgetTester tester) async {
+    final Evento eventoSinInscribir = Evento(
+      id: 'evento_99',
+      creadorUid: 'creador_1',
+      nombre: 'Caminata Guatavita',
+      lugar: 'Guatavita, Cundinamarca',
+      fechaHora: DateTime.now().add(const Duration(days: 2)),
+      fechaCreacion: DateTime.now(),
+      inscritos: const <String>[], // Vacío, user_123 no está unido
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatEventoScreen(
+          evento: eventoSinInscribir,
+          firestore: fakeFirestore,
+          auth: mockAuth,
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('Chat exclusivo para participantes'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
   });
 }
