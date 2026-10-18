@@ -82,6 +82,10 @@ Future<Map<String, dynamic>?> cargarPerfilDeFirestore(String uid) async {
   }
 }
 
+/// Fondo del botón "Eliminar" de la confirmación: rojo muy claro, para una
+/// alerta suave sobre el texto [FormStyles.colorError].
+const Color _alertaSuaveFondo = Color(0xFFFBE9E7);
+
 /// Detalle de un evento.
 class EventoDetalleScreen extends StatefulWidget {
   const EventoDetalleScreen({
@@ -91,6 +95,7 @@ class EventoDetalleScreen extends StatefulWidget {
     this.service,
     this.uidUsuarioActual,
     this.servicioCalificaciones,
+    this.onEventoEliminado,
     super.key,
   });
 
@@ -112,6 +117,10 @@ class EventoDetalleScreen extends StatefulWidget {
   /// Servicio de calificaciones entre participantes (inyectable en pruebas).
   final CalificacionUsuarioService? servicioCalificaciones;
 
+  /// Se llama con el ID del evento cuando el organizador lo elimina, justo
+  /// antes de volver a la pantalla anterior (para quitarlo de la lista).
+  final ValueChanged<String>? onEventoEliminado;
+
   @override
   State<EventoDetalleScreen> createState() => _EventoDetalleScreenState();
 }
@@ -131,6 +140,9 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
 
   /// `true` mientras se guarda la salida del evento (evita dobles toques).
   bool _saliendo = false;
+
+  /// `true` mientras se elimina el evento (evita dobles toques).
+  bool _eliminando = false;
 
   /// `true` mientras se consulta el estado real del evento al abrirlo.
   bool _verificando = false;
@@ -230,8 +242,85 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     }
   }
 
+  /// Pide confirmación antes de eliminar el evento.
+  Future<bool> _confirmarEliminacion() async {
+    final bool? eliminar = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(
+          '¿Eliminar este evento?',
+          style: FormStyles.titulo(pequena: true),
+        ),
+        content: Text(
+          'Esta acción no se puede deshacer. El evento dejará de estar '
+          'disponible para todos los usuarios.',
+          style: FormStyles.subtitulo(pequena: true),
+        ),
+        actions: <Widget>[
+          TextButton(
+            key: const Key('cancelar-eliminar-evento'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            key: const Key('confirmar-eliminar-evento'),
+            // Alerta suave: fondo rojo claro y texto rojo, no un rojo intenso.
+            style: FilledButton.styleFrom(
+              backgroundColor: _alertaSuaveFondo,
+              foregroundColor: FormStyles.colorError,
+              elevation: 0,
+            ),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    return eliminar ?? false;
+  }
+
+  /// Elimina el evento (HU-20) tras confirmarlo: vuelve a la lista y avisa
+  /// "El evento fue eliminado". Si se cancela no cambia nada; si falla, se
+  /// informa y el usuario sigue en el detalle.
   Future<void> _eliminarEvento() async {
-    // TODO: pedir confirmación, eliminar el evento y volver al listado.
+    final EventoService? servicio = _service;
+    if (_eliminando) return;
+    if (!await _confirmarEliminacion() || !mounted) return;
+    if (servicio == null) {
+      _mostrarError(
+        'No se pudo eliminar el evento. Inténtalo de nuevo.',
+        reintentable: true,
+        reintentar: _eliminarEvento,
+      );
+      return;
+    }
+    setState(() => _eliminando = true);
+
+    try {
+      await servicio.eliminarEvento(_evento.id);
+    } on EventoServiceException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _eliminando = false;
+        if (error.code == 'not-found') _eventoNoExiste = true;
+      });
+      _mostrarError(
+        error.message,
+        reintentable: !_erroresDefinitivos.contains(error.code),
+        reintentar: _eliminarEvento,
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    // El aviso se muestra con el ScaffoldMessenger de la app, así sigue
+    // visible en la lista después de cerrar el detalle.
+    final ScaffoldMessengerState mensajes = ScaffoldMessenger.of(context);
+    widget.onEventoEliminado?.call(_evento.id);
+    Navigator.of(context).pop();
+    mensajes.showSnackBar(
+      const SnackBar(content: Text('El evento fue eliminado')),
+    );
   }
 
   /// Inscribe al usuario en el evento. Si funciona, la lista de
@@ -291,6 +380,7 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     'evento-finalizado',
     'evento-lleno',
     'user-not-authenticated',
+    'permission-denied',
   };
 
   /// Muestra [mensaje]; si [reintentable], con la acción "Reintentar" que
@@ -462,7 +552,7 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
                           Size.fromHeight(48),
                         ),
                       ),
-                  onPressed: _eliminarEvento,
+                  onPressed: _eliminando ? null : _eliminarEvento,
                   icon: const Icon(Icons.delete_outline, size: 18),
                   label: const Text('Eliminar'),
                 ),
@@ -531,6 +621,10 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
   /// para evitar que la pantalla falle.
   String? _obtenerUidUsuarioActual() {
     if (widget.uidUsuarioActual != null) return widget.uidUsuarioActual;
+    // Con un servicio inyectado (por ejemplo, el de la lista) se usa su
+    // sesión, que es la misma de Firebase Authentication en la app.
+    final EventoService? inyectado = widget.service;
+    if (inyectado != null) return inyectado.uidUsuarioActual;
     try {
       return FirebaseAuth.instance.currentUser?.uid;
     } on FirebaseException {
@@ -659,10 +753,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
                               '(${evento.inscritos.length}/${evento.cupoMaximo})',
                     style: FormStyles.etiqueta(),
                   ),
-                  if (evento.cuposDisponibles != null) ...<Widget>[
-                    const SizedBox(height: FormStyles.s4),
-                    _CuposDisponibles(restantes: evento.cuposDisponibles!),
-                  ],
                   const SizedBox(height: FormStyles.s8),
                   if (evento.inscritos.isEmpty)
                     Text(
@@ -728,33 +818,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
   }
 }
 
-/// Etiqueta "Evento finalizado" para eventos cuya fecha ya pasó.
-/// Cupos que quedan en un evento con cupo máximo: "Quedan 3 cupos",
-/// "Queda 1 cupo" o "No quedan cupos disponibles".
-class _CuposDisponibles extends StatelessWidget {
-  const _CuposDisponibles({required this.restantes});
-
-  final int restantes;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool lleno = restantes == 0;
-    return Text(
-      switch (restantes) {
-        0 => 'No quedan cupos disponibles',
-        1 => 'Queda 1 cupo',
-        _ => 'Quedan $restantes cupos',
-      },
-      key: const Key('evento-cupos-disponibles'),
-      style: FormStyles.cuerpo(
-        size: 13,
-        weight: FontWeight.w600,
-        color: lleno ? FormStyles.colorError : AppTheme.azulPetroleo,
-      ),
-    );
-  }
-}
-
 /// Confirmación visible de que el usuario ya está inscrito en el evento.
 class _AvisoInscrito extends StatelessWidget {
   const _AvisoInscrito();
@@ -792,6 +855,7 @@ class _AvisoInscrito extends StatelessWidget {
   }
 }
 
+/// Etiqueta "Evento finalizado" para eventos cuya fecha ya pasó.
 class _EtiquetaFinalizado extends StatelessWidget {
   const _EtiquetaFinalizado();
 

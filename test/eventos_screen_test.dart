@@ -75,6 +75,15 @@ class _ServicioFalso extends Fake implements EventoService {
 
   @override
   Future<bool> puedeCrearEventos() async => puedeCrear;
+
+  /// Nadie con sesión: el detalle no muestra acciones de organizador.
+  @override
+  String? get uidUsuarioActual => null;
+
+  /// El detalle consulta el estado real del evento al abrirse.
+  @override
+  Future<Evento> obtenerEvento(String eventoId) async =>
+      eventos.firstWhere((Evento e) => e.id == eventoId);
 }
 
 Future<void> _abrir(

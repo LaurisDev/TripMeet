@@ -255,7 +255,6 @@ void main() {
       expect(botonSalir(), findsNothing);
       expect(find.widgetWithText(FilledButton, 'Unirme'), findsOneWidget);
       expect(find.text('Participantes (1/2)'), findsOneWidget);
-      expect(find.text('Queda 1 cupo'), findsOneWidget);
       expect(find.text('ana'), findsNothing);
     });
 

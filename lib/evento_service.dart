@@ -184,7 +184,9 @@ class Evento {
     certificadoGuia: CertificadoGuia.desdePerfil(perfil),
   );
 
-  factory Evento.fromFirestore(DocumentSnapshot<Map<String, dynamic>> documento) {
+  factory Evento.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> documento,
+  ) {
     final Map<String, dynamic> datos = documento.data() ?? <String, dynamic>{};
 
     return Evento(
@@ -192,8 +194,7 @@ class Evento {
       creadorUid: datos['creadorUid'] as String? ?? '',
       nombre: datos['nombre'] as String? ?? '',
       lugar: datos['lugar'] as String? ?? '',
-      fechaHora:
-          (datos['fechaHora'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      fechaHora: (datos['fechaHora'] as Timestamp?)?.toDate() ?? DateTime.now(),
       fechaCreacion:
           (datos['fechaCreacion'] as Timestamp?)?.toDate() ?? DateTime.now(),
       descripcion: _textoOpcional(datos['descripcion']),
@@ -252,10 +253,7 @@ class EventoServiceException implements Exception {
 /// otra persona ocupó el último cupo mientras el usuario veía el detalle.
 class EventoLlenoException extends EventoServiceException {
   const EventoLlenoException(this.inscritos)
-    : super(
-        'El evento ya no tiene cupos disponibles.',
-        code: 'evento-lleno',
-      );
+    : super('El evento ya no tiene cupos disponibles.', code: 'evento-lleno');
 
   final List<String> inscritos;
 }
@@ -412,6 +410,9 @@ class EventoService {
     return rol is String && rol.trim() == rolGuiaTuristico;
   }
 
+  /// UID del usuario con sesión iniciada; `null` si no hay sesión.
+  String? get uidUsuarioActual => _auth.currentUser?.uid;
+
   /// Indica si el usuario autenticado puede crear eventos (ver
   /// [puedeCrear]). Sin sesión iniciada devuelve `false`.
   Future<bool> puedeCrearEventos() async {
@@ -423,8 +424,10 @@ class EventoService {
   /// Lee el perfil `usuarios/{uid}`; `null` si no existe.
   Future<Map<String, dynamic>?> _leerPerfil(String uid) async {
     try {
-      final DocumentSnapshot<Map<String, dynamic>> perfil =
-          await _firestore.collection('usuarios').doc(uid).get();
+      final DocumentSnapshot<Map<String, dynamic>> perfil = await _firestore
+          .collection('usuarios')
+          .doc(uid)
+          .get();
       return perfil.data();
     } on FirebaseException catch (error) {
       throw EventoServiceException(
@@ -492,8 +495,9 @@ class EventoService {
     }
 
     final String? descripcionLimpia = descripcion?.trim();
-    final DocumentReference<Map<String, dynamic>> documento =
-        _firestore.collection('eventos').doc();
+    final DocumentReference<Map<String, dynamic>> documento = _firestore
+        .collection('eventos')
+        .doc();
     final Evento evento = Evento(
       id: documento.id,
       creadorUid: usuario.uid,
@@ -533,7 +537,6 @@ class EventoService {
     return evento;
   }
 
-
   /// Edita un evento existente. Solo puede hacerlo el usuario que lo creó.
   Future<Evento> editarEvento({
     required String eventoId,
@@ -566,11 +569,12 @@ class EventoService {
     }
 
     try {
-      final DocumentReference<Map<String, dynamic>> documento =
-          _firestore.collection('eventos').doc(eventoId);
+      final DocumentReference<Map<String, dynamic>> documento = _firestore
+          .collection('eventos')
+          .doc(eventoId);
 
-      final DocumentSnapshot<Map<String, dynamic>> snapshot =
-          await documento.get();
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await documento
+          .get();
 
       if (!snapshot.exists) {
         throw const EventoServiceException(
@@ -594,16 +598,15 @@ class EventoService {
         'nombre': nombre.trim(),
         'lugar': lugar.trim(),
         'fechaHora': Timestamp.fromDate(fechaHora!),
-        'descripcion':
-            (descripcionLimpia == null || descripcionLimpia.isEmpty)
-                ? null
-                : descripcionLimpia,
+        'descripcion': (descripcionLimpia == null || descripcionLimpia.isEmpty)
+            ? null
+            : descripcionLimpia,
         'cupoMaximo': cupoMaximo,
         'precio': precio,
       });
 
-      final DocumentSnapshot<Map<String, dynamic>> actualizado =
-          await documento.get();
+      final DocumentSnapshot<Map<String, dynamic>> actualizado = await documento
+          .get();
 
       // El diseño premium y el carné del guía salen del perfil del creador,
       // no del documento del evento; sin esto se perderían tras editar.
@@ -620,6 +623,54 @@ class EventoService {
     } on FirebaseException catch (error) {
       throw EventoServiceException(
         _mensajeParaErrorDeFirestore(error.code),
+        code: error.code,
+      );
+    }
+  }
+
+  /// Elimina permanentemente el evento [eventoId] (HU-20). Solo puede
+  /// hacerlo quien lo creó.
+  ///
+  /// Lee el documento antes de borrarlo para comprobar que haya sesión
+  /// (`user-not-authenticated`), que el evento exista (`not-found`) y que el
+  /// usuario sea su organizador (`permission-denied`). Si algo falla, el
+  /// evento queda intacto.
+  ///
+  /// Igual que con las publicaciones, la foto no se borra de Cloudinary
+  /// (borrar exige la API secret, que no puede vivir en la app).
+  Future<void> eliminarEvento(String eventoId) async {
+    final User? usuario = _auth.currentUser;
+    if (usuario == null) {
+      throw const EventoServiceException(
+        'Inicia sesión para eliminar el evento.',
+        code: 'user-not-authenticated',
+      );
+    }
+
+    final DocumentReference<Map<String, dynamic>> documento = _firestore
+        .collection('eventos')
+        .doc(eventoId);
+
+    try {
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await documento
+          .get();
+      if (!snapshot.exists) {
+        throw const EventoServiceException(
+          'El evento ya no existe.',
+          code: 'not-found',
+        );
+      }
+      if (Evento.fromFirestore(snapshot).creadorUid != usuario.uid) {
+        throw const EventoServiceException(
+          'Solo puedes eliminar los eventos que tú has creado.',
+          code: 'permission-denied',
+        );
+      }
+
+      await documento.delete();
+    } on FirebaseException catch (error) {
+      throw EventoServiceException(
+        _mensajeParaErrorDeFirestore(error.code, eliminando: true),
         code: error.code,
       );
     }
@@ -652,8 +703,9 @@ class EventoService {
       );
     }
 
-    final DocumentReference<Map<String, dynamic>> documento =
-        _firestore.collection('eventos').doc(eventoId);
+    final DocumentReference<Map<String, dynamic>> documento = _firestore
+        .collection('eventos')
+        .doc(eventoId);
 
     try {
       return await _firestore.runTransaction<List<String>>((
@@ -723,8 +775,9 @@ class EventoService {
       );
     }
 
-    final DocumentReference<Map<String, dynamic>> documento =
-        _firestore.collection('eventos').doc(eventoId);
+    final DocumentReference<Map<String, dynamic>> documento = _firestore
+        .collection('eventos')
+        .doc(eventoId);
 
     try {
       return await _firestore.runTransaction<List<String>>((
@@ -817,8 +870,9 @@ class EventoService {
           .orderBy('fechaHora')
           .get();
 
-      final List<Evento> eventos =
-          snapshot.docs.map(Evento.fromFirestore).toList();
+      final List<Evento> eventos = snapshot.docs
+          .map(Evento.fromFirestore)
+          .toList();
       final Map<String, Map<String, dynamic>?> perfiles =
           await _perfilesDeCreadores(
             eventos.map((Evento e) => e.creadorUid).toSet(),
@@ -841,8 +895,9 @@ class EventoService {
   Future<Map<String, Map<String, dynamic>?>> _perfilesDeCreadores(
     Set<String> uids,
   ) async {
-    final List<String> validos =
-        uids.where((String uid) => uid.isNotEmpty).toList();
+    final List<String> validos = uids
+        .where((String uid) => uid.isNotEmpty)
+        .toList();
     final List<Map<String, dynamic>?> perfiles = await Future.wait(
       validos.map((String uid) async {
         try {
@@ -862,6 +917,7 @@ class EventoService {
     bool creando = false,
     bool inscribiendo = false,
     bool saliendo = false,
+    bool eliminando = false,
   }) {
     switch (codigo) {
       case 'unavailable':
@@ -876,6 +932,9 @@ class EventoService {
         if (saliendo) {
           return 'No se pudo completar tu salida del evento. '
               'Inténtalo de nuevo.';
+        }
+        if (eliminando) {
+          return 'No se pudo eliminar el evento. Inténtalo de nuevo.';
         }
         return creando
             ? 'No se pudo crear el evento. Inténtalo de nuevo.'

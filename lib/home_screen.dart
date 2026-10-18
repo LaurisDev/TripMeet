@@ -39,6 +39,11 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
 
     return Scaffold(
+      // En Eventos el botón "Crear evento" va centrado abajo; el de IA sube
+      // una fila para no taparlo.
+      floatingActionButtonLocation: _indiceActual == 2
+          ? const _FabMasArriba(FloatingActionButtonLocation.endFloat, 72)
+          : FloatingActionButtonLocation.endFloat,
       // TODO(temporal): botón solo para probar el flujo de recomendaciones
       // con IA de punta a punta. Quitar cuando esta HU tenga su UI final.
       floatingActionButton: FloatingActionButton.extended(
@@ -78,5 +83,19 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Igual que [base], pero [subir] píxeles más arriba.
+class _FabMasArriba extends FloatingActionButtonLocation {
+  const _FabMasArriba(this.base, this.subir);
+
+  final FloatingActionButtonLocation base;
+  final double subir;
+
+  @override
+  Offset getOffset(ScaffoldPrelayoutGeometry scaffoldGeometry) {
+    final Offset offset = base.getOffset(scaffoldGeometry);
+    return Offset(offset.dx, offset.dy - subir);
   }
 }

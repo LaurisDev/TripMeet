@@ -25,6 +25,15 @@ class _ServicioFalso extends Fake implements EventoService {
   Future<List<Evento>> obtenerEventosDisponibles({DateTime? desde}) async =>
       List<Evento>.of(guardados);
 
+  /// Quien crea los eventos de esta prueba (ver [crearEvento]).
+  @override
+  String? get uidUsuarioActual => 'guia-ok';
+
+  /// El detalle consulta el estado real del evento al abrirse.
+  @override
+  Future<Evento> obtenerEvento(String eventoId) async =>
+      guardados.firstWhere((Evento e) => e.id == eventoId);
+
   @override
   Future<Evento> crearEvento({
     required String nombre,

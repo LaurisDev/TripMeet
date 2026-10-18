@@ -404,38 +404,24 @@ void main() {
       expect(tester.widget<FilledButton>(botonUnirme()).onPressed, isNull);
     });
 
-    testWidgets('muestra los cupos que quedan y los descuenta al unirse', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('al unirse actualiza el conteo de participantes, sin '
+        'mensaje de cupos restantes', (WidgetTester tester) async {
       await abrir(tester, evento: evento(cupo: 3, inscritos: <String>['luis']));
-      expect(find.text('Quedan 2 cupos'), findsOneWidget);
+      expect(find.text('Participantes (1/3)'), findsOneWidget);
 
       await tester.ensureVisible(botonUnirme());
       await tester.tap(botonUnirme());
       await tester.pumpAndSettle();
 
-      expect(find.text('Queda 1 cupo'), findsOneWidget);
       expect(find.text('Participantes (2/3)'), findsOneWidget);
+      expect(find.textContaining('Queda'), findsNothing);
     });
 
-    testWidgets('al ocupar el último cupo indica que no quedan', (
-      WidgetTester tester,
-    ) async {
-      await abrir(tester, evento: evento(cupo: 2, inscritos: <String>['luis']));
-
-      await tester.ensureVisible(botonUnirme());
-      await tester.tap(botonUnirme());
-      await tester.pumpAndSettle();
-
-      expect(find.text('No quedan cupos disponibles'), findsOneWidget);
-    });
-
-    testWidgets('sin cupo máximo no muestra cupos restantes', (
+    testWidgets('sin cupo máximo muestra solo el número de participantes', (
       WidgetTester tester,
     ) async {
       await abrir(tester, evento: evento(inscritos: <String>['luis']));
 
-      expect(find.byKey(const Key('evento-cupos-disponibles')), findsNothing);
       expect(find.text('Participantes (1)'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Unirme'), findsOneWidget);
     });
@@ -447,7 +433,7 @@ void main() {
         evento: evento(cupo: 2, inscritos: <String>['luis']),
         error: const EventoLlenoException(<String>['luis', 'sofia']),
       );
-      expect(find.text('Queda 1 cupo'), findsOneWidget);
+      expect(find.text('Participantes (1/2)'), findsOneWidget);
 
       await tester.ensureVisible(botonUnirme());
       await tester.tap(botonUnirme());
@@ -460,7 +446,6 @@ void main() {
       expect(find.widgetWithText(FilledButton, 'Evento lleno'), findsOneWidget);
       expect(tester.widget<FilledButton>(botonUnirme()).onPressed, isNull);
       expect(find.text('Participantes (2/2)'), findsOneWidget);
-      expect(find.text('No quedan cupos disponibles'), findsOneWidget);
       expect(find.byKey(const Key('evento-inscrito')), findsNothing);
     });
 
@@ -489,7 +474,7 @@ void main() {
 
       expect(find.widgetWithText(FilledButton, 'Evento lleno'), findsOneWidget);
       expect(tester.widget<FilledButton>(botonUnirme()).onPressed, isNull);
-      expect(find.text('No quedan cupos disponibles'), findsOneWidget);
+      expect(find.text('Participantes (1/1)'), findsOneWidget);
     });
 
     testWidgets('mientras verifica no se puede unir', (
