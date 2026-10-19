@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -140,7 +141,7 @@ class MensajeEvento {
   }
 }
 
-/// Pantalla moderna, completa e innovadora de Chat para los asistentes a un Evento.
+/// Pantalla moderna, completa e innovadora de Chat exclusivo para los participantes de un Evento.
 class ChatEventoScreen extends StatefulWidget {
   const ChatEventoScreen({
     required this.evento,
@@ -171,6 +172,15 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
 
   bool _enviando = false;
   bool _subiendoFoto = false;
+  int _ultimoConteoMensajes = 0;
+
+  /// Verifica si el usuario actual es organizador o participante unido al evento.
+  bool get _esParticipanteOOrganizador {
+    final String? uid = _auth.currentUser?.uid;
+    if (uid == null) return false;
+    return widget.evento.creadorUid == uid ||
+        widget.evento.inscritos.contains(uid);
+  }
 
   @override
   void dispose() {
@@ -188,10 +198,75 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
         .orderBy('fecha', descending: false)
         .snapshots()
         .map((QuerySnapshot<Map<String, dynamic>> snapshot) {
-      return snapshot.docs
+      final List<MensajeEvento> lista = snapshot.docs
           .map((doc) => MensajeEvento.fromFirestore(doc, widget.evento.id))
           .toList();
+
+      // Notificación flotante al recibir mensajes nuevos de otros participantes
+      final String? uidActual = _auth.currentUser?.uid;
+      if (lista.length > _ultimoConteoMensajes &&
+          _ultimoConteoMensajes > 0 &&
+          lista.isNotEmpty) {
+        final MensajeEvento ultimo = lista.last;
+        if (ultimo.usuarioId != uidActual) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _notificarNuevoMensaje(ultimo);
+          });
+        }
+      }
+      _ultimoConteoMensajes = lista.length;
+
+      return lista;
     });
+  }
+
+  void _notificarNuevoMensaje(MensajeEvento mensaje) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.only(top: 10, left: 16, right: 16),
+        backgroundColor: AppTheme.azulPetroleo,
+        duration: const Duration(seconds: 3),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        content: Row(
+          children: <Widget>[
+            const Icon(
+              Icons.notifications_active_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    'Nuevo mensaje de ${mensaje.nombreUsuario}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      fontSize: 12,
+                    ),
+                  ),
+                  Text(
+                    mensaje.texto,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        const TextStyle(color: Colors.white70, fontSize: 11.5),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _scrollToBottom() {
@@ -208,19 +283,14 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
 
   /// Envía un mensaje de texto.
   Future<void> _enviarMensaje([String? textoPersonalizado]) async {
+    if (!_esParticipanteOOrganizador) return;
+
     final String texto = (textoPersonalizado ?? _textController.text).trim();
 
     if (texto.isEmpty || _enviando) return;
 
     final User? usuario = _auth.currentUser;
-    if (usuario == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Debes iniciar sesión para participar en el chat.'),
-        ),
-      );
-      return;
-    }
+    if (usuario == null) return;
 
     _textController.clear();
     setState(() => _enviando = true);
@@ -260,6 +330,8 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
 
   /// Permite seleccionar y enviar una fotografía al chat del evento.
   Future<void> _adjuntarFoto() async {
+    if (!_esParticipanteOOrganizador) return;
+
     final List<ArchivoLocal> seleccionados = await seleccionarArchivos(
       extensiones: const <String>['jpg', 'jpeg', 'png', 'webp'],
     );
@@ -317,6 +389,8 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
 
   /// Diálogo para crear una nueva Encuesta interactiva en el grupo.
   void _mostrarDialogoCrearEncuesta() {
+    if (!_esParticipanteOOrganizador) return;
+
     final TextEditingController preguntaController = TextEditingController();
     final List<TextEditingController> opcionesControllers = <TextEditingController>[
       TextEditingController(),
@@ -448,6 +522,8 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
     MensajeEvento mensaje,
     int opcionIndex,
   ) async {
+    if (!_esParticipanteOOrganizador) return;
+
     final User? usuario = _auth.currentUser;
     if (usuario == null) return;
 
@@ -575,6 +651,8 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
     MensajeEvento mensaje,
     String emoji,
   ) async {
+    if (!_esParticipanteOOrganizador) return;
+
     final User? usuario = _auth.currentUser;
     if (usuario == null) return;
 
@@ -664,183 +742,258 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
           ],
         ),
         actions: <Widget>[
-          IconButton(
-            icon: const Icon(Icons.poll_rounded, color: AppTheme.azulPetroleo),
-            tooltip: 'Crear encuesta',
-            onPressed: _mostrarDialogoCrearEncuesta,
-          ),
+          if (_esParticipanteOOrganizador)
+            IconButton(
+              icon: const Icon(
+                Icons.poll_rounded,
+                color: AppTheme.azulPetroleo,
+              ),
+              tooltip: 'Crear encuesta',
+              onPressed: _mostrarDialogoCrearEncuesta,
+            ),
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            // Banner informativo del evento
-            Container(
-              margin: const EdgeInsets.symmetric(
-                horizontal: FormStyles.s16,
-                vertical: FormStyles.s8,
-              ),
-              padding: const EdgeInsets.symmetric(
-                horizontal: FormStyles.s12,
-                vertical: FormStyles.s8,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(FormStyles.radio),
-                border: Border.all(
-                  color: AppTheme.verdeAzulado.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
+        child: !_esParticipanteOOrganizador
+            ? _buildPantallaBloqueadaChat()
+            : Column(
                 children: <Widget>[
-                  const Icon(
-                    Icons.place_outlined,
-                    size: 16,
-                    color: AppTheme.verdeAzulado,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Punto de encuentro: ${widget.evento.lugar}',
-                      style: FormStyles.cuerpo(
-                        size: 12,
-                        weight: FontWeight.w600,
-                        color: AppTheme.azulPetroleo,
+                  // Banner informativo del evento
+                  Container(
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: FormStyles.s16,
+                      vertical: FormStyles.s8,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: FormStyles.s12,
+                      vertical: FormStyles.s8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(FormStyles.radio),
+                      border: Border.all(
+                        color: AppTheme.verdeAzulado.withValues(alpha: 0.3),
                       ),
-                      overflow: TextOverflow.ellipsis,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        const Icon(
+                          Icons.place_outlined,
+                          size: 16,
+                          color: AppTheme.verdeAzulado,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Punto de encuentro: ${widget.evento.lugar}',
+                            style: FormStyles.cuerpo(
+                              size: 12,
+                              weight: FontWeight.w600,
+                              color: AppTheme.azulPetroleo,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
-            ),
 
-            // Stream en tiempo real de mensajes
-            Expanded(
-              child: StreamBuilder<List<MensajeEvento>>(
-                stream: _obtenerStreamMensajes(),
-                builder: (
-                  BuildContext context,
-                  AsyncSnapshot<List<MensajeEvento>> snapshot,
-                ) {
-                  if (snapshot.connectionState == ConnectionState.waiting &&
-                      !snapshot.hasData) {
-                    return const Center(
-                      child: CircularProgressIndicator(
-                        color: AppTheme.verdeAzulado,
-                      ),
-                    );
-                  }
+                  // Stream en tiempo real de mensajes
+                  Expanded(
+                    child: StreamBuilder<List<MensajeEvento>>(
+                      stream: _obtenerStreamMensajes(),
+                      builder: (
+                        BuildContext context,
+                        AsyncSnapshot<List<MensajeEvento>> snapshot,
+                      ) {
+                        if (snapshot.connectionState ==
+                                ConnectionState.waiting &&
+                            !snapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(
+                              color: AppTheme.verdeAzulado,
+                            ),
+                          );
+                        }
 
-                  final List<MensajeEvento> mensajes =
-                      snapshot.data ?? <MensajeEvento>[];
+                        final List<MensajeEvento> mensajes =
+                            snapshot.data ?? <MensajeEvento>[];
 
-                  final MensajeEvento? mensajeFijado = mensajes
-                      .where((m) => m.fijado)
-                      .lastOrNull;
+                        final MensajeEvento? mensajeFijado = mensajes
+                            .where((m) => m.fijado)
+                            .lastOrNull;
 
-                  if (mensajes.isEmpty) {
-                    return Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(FormStyles.s24),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        if (mensajes.isEmpty) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(FormStyles.s24),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: <Widget>[
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.verdeAzulado.withValues(
+                                        alpha: 0.1,
+                                      ),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.forum_outlined,
+                                      size: 48,
+                                      color: AppTheme.verdeAzulado,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    '¡Sé el primero en escribir!',
+                                    style: FormStyles.titulo(pequena: true),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Coordina detalles, hora de encuentro, fotos y encuestas con los demás asistentes.',
+                                    textAlign: TextAlign.center,
+                                    style: FormStyles.ayuda(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        _scrollToBottom();
+
+                        return Column(
                           children: <Widget>[
-                            Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: AppTheme.verdeAzulado.withValues(
-                                  alpha: 0.1,
+                            if (mensajeFijado != null)
+                              _buildBannerMensajeFijado(mensajeFijado),
+                            Expanded(
+                              child: ListView.builder(
+                                controller: _scrollController,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: FormStyles.s16,
+                                  vertical: FormStyles.s8,
                                 ),
-                                shape: BoxShape.circle,
+                                itemCount: mensajes.length,
+                                itemBuilder: (BuildContext context, int index) {
+                                  final MensajeEvento msg = mensajes[index];
+                                  final bool esPropio =
+                                      usuarioActualUid != null &&
+                                          msg.usuarioId == usuarioActualUid;
+                                  final bool esOrganizador =
+                                      usuarioActualUid != null &&
+                                          widget.evento.creadorUid ==
+                                              usuarioActualUid;
+
+                                  return _BurbujaMensaje(
+                                    mensaje: msg,
+                                    esPropio: esPropio,
+                                    esOrganizador: esOrganizador,
+                                    uidActual: usuarioActualUid,
+                                    onEditar: () => _editarMensaje(msg),
+                                    onEliminar: () => _eliminarMensaje(msg),
+                                    onFijar: () => _alternarFijarMensaje(msg),
+                                    onReaccionar: (emoji) =>
+                                        _reaccionarMensaje(msg, emoji),
+                                    onVotarEncuesta: (opIndex) =>
+                                        _votarEncuesta(msg, opIndex),
+                                  );
+                                },
                               ),
-                              child: const Icon(
-                                Icons.forum_outlined,
-                                size: 48,
-                                color: AppTheme.verdeAzulado,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              '¡Sé el primero en escribir!',
-                              style: FormStyles.titulo(pequena: true),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Coordina detalles, hora de encuentro, fotos y encuestas con los demás asistentes.',
-                              textAlign: TextAlign.center,
-                              style: FormStyles.ayuda(),
                             ),
                           ],
-                        ),
-                      ),
-                    );
-                  }
+                        );
+                      },
+                    ),
+                  ),
 
-                  _scrollToBottom();
-
-                  return Column(
-                    children: <Widget>[
-                      if (mensajeFijado != null)
-                        _buildBannerMensajeFijado(mensajeFijado),
-                      Expanded(
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: FormStyles.s16,
-                            vertical: FormStyles.s8,
+                  if (_subiendoFoto)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: <Widget>[
+                          SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           ),
-                          itemCount: mensajes.length,
-                          itemBuilder: (BuildContext context, int index) {
-                            final MensajeEvento msg = mensajes[index];
-                            final bool esPropio = usuarioActualUid != null &&
-                                msg.usuarioId == usuarioActualUid;
-                            final bool esOrganizador = usuarioActualUid != null &&
-                                widget.evento.creadorUid == usuarioActualUid;
-
-                            return _BurbujaMensaje(
-                              mensaje: msg,
-                              esPropio: esPropio,
-                              esOrganizador: esOrganizador,
-                              uidActual: usuarioActualUid,
-                              onEditar: () => _editarMensaje(msg),
-                              onEliminar: () => _eliminarMensaje(msg),
-                              onFijar: () => _alternarFijarMensaje(msg),
-                              onReaccionar: (emoji) =>
-                                  _reaccionarMensaje(msg, emoji),
-                              onVotarEncuesta: (opIndex) =>
-                                  _votarEncuesta(msg, opIndex),
-                            );
-                          },
-                        ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Subiendo fotografía...',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.textoSuave,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  );
-                },
+                    ),
+
+                  _buildSugerenciasRapidas(),
+                  _buildInputArea(),
+                ],
+              ),
+      ),
+    );
+  }
+
+  /// Pantalla bloqueada cuando el usuario no se ha unido al evento.
+  Widget _buildPantallaBloqueadaChat() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(FormStyles.s24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppTheme.naranjaQuemado.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.lock_rounded,
+                size: 56,
+                color: AppTheme.naranjaQuemado,
               ),
             ),
-
-            if (_subiendoFoto)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: <Widget>[
-                    SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    SizedBox(width: 8),
-                    Text(
-                      'Subiendo fotografía...',
-                      style: TextStyle(fontSize: 12, color: AppTheme.textoSuave),
-                    ),
-                  ],
+            const SizedBox(height: 20),
+            Text(
+              'Chat exclusivo para participantes',
+              style: FormStyles.titulo(pequena: true),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Para ver los mensajes, fotos y encuestas de este evento, debes unirte como participante primero.',
+              textAlign: TextAlign.center,
+              style: FormStyles.ayuda(),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.azulPetroleo,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 14,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
-
-            _buildSugerenciasRapidas(),
-            _buildInputArea(),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+              label: const Text(
+                'Volver al evento para unirme',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -902,7 +1055,7 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
   }
 
   Widget _buildSugerenciasRapidas() {
-    if (_enviando) return const SizedBox.shrink();
+    if (_enviando || !_esParticipanteOOrganizador) return const SizedBox.shrink();
 
     final List<Map<String, String>> sugerencias = <Map<String, String>>[
       <String, String>{
@@ -1072,6 +1225,49 @@ class _BurbujaMensaje extends StatelessWidget {
     return '$hora:$minuto';
   }
 
+  void _verFotoPantallaCompleta(BuildContext context, String url) {
+    showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return Dialog.fullscreen(
+          backgroundColor: Colors.black,
+          child: Stack(
+            children: <Widget>[
+              Center(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4.0,
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (BuildContext context, Widget child,
+                        ImageChunkEvent? progress) {
+                      if (progress == null) return child;
+                      return const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 40,
+                right: 20,
+                child: CircleAvatar(
+                  backgroundColor: Colors.black54,
+                  child: IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _mostrarOpcionesMensaje(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
@@ -1229,29 +1425,32 @@ class _BurbujaMensaje extends StatelessWidget {
                       const SizedBox(height: 3),
                     ],
 
-                    // Fotografía en el chat
+                    // Fotografía en el chat con visor a pantalla completa
                     if (fotoUrl != null) ...<Widget>[
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          constraints: const BoxConstraints(maxHeight: 220),
-                          child: Image.network(
-                            fotoUrl,
-                            width: double.infinity,
-                            fit: BoxFit.cover,
-                            loadingBuilder: (BuildContext context, Widget child,
-                                ImageChunkEvent? progress) {
-                              if (progress == null) return child;
-                              return Container(
-                                height: 150,
-                                color: AppTheme.crema,
-                                child: const Center(
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
+                      GestureDetector(
+                        onTap: () => _verFotoPantallaCompleta(context, fotoUrl),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            constraints: const BoxConstraints(maxHeight: 220),
+                            child: Image.network(
+                              fotoUrl,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (BuildContext context, Widget child,
+                                  ImageChunkEvent? progress) {
+                                if (progress == null) return child;
+                                return Container(
+                                  height: 150,
+                                  color: AppTheme.crema,
+                                  child: const Center(
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
                                   ),
-                                ),
-                              );
-                            },
+                                );
+                              },
+                            ),
                           ),
                         ),
                       ),

@@ -491,6 +491,40 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
   }
 
   void _abrirChatEvento() {
+    final String? usuarioActualUid = _obtenerUidUsuarioActual();
+    final bool esCreador =
+        usuarioActualUid != null && usuarioActualUid == _evento.creadorUid;
+    final bool estaInscrito =
+        usuarioActualUid != null && _evento.inscritos.contains(usuarioActualUid);
+
+    if (!esCreador && !estaInscrito) {
+      showDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(FormStyles.radio),
+          ),
+          title: const Row(
+            children: <Widget>[
+              Icon(Icons.lock_outline_rounded, color: AppTheme.naranjaQuemado),
+              SizedBox(width: 8),
+              Text('Chat restringido'),
+            ],
+          ),
+          content: const Text(
+            'El chat es exclusivo para las personas unidas al evento. ¡Presiona "Unirme" para acceder y conversar con los demás asistentes!',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Entendido'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     Navigator.push<void>(
       context,
       MaterialPageRoute<void>(
@@ -643,17 +677,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
       backgroundColor: AppTheme.crema,
       appBar: AppBar(
         title: const Text('Evento'),
-        actions: <Widget>[
-          IconButton(
-            key: const Key('abrir-chat-evento'),
-            icon: const Icon(
-              Icons.chat_bubble_outline_rounded,
-              color: AppTheme.azulPetroleo,
-            ),
-            tooltip: 'Chat del evento',
-            onPressed: _abrirChatEvento,
-          ),
-        ],
       ),
       body: SafeArea(
         child: ListView(
