@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'cloudinary_service.dart';
+import 'notificacion_service.dart';
 
 /// Archivo elegido en el dispositivo, listo para subirse.
 ///
@@ -119,6 +120,8 @@ class GuiaService {
 
   final FirebaseFirestore _firestore;
   final CloudinaryService _cloudinary;
+  late final NotificacionService _notificacionService =
+      NotificacionService(firestore: _firestore);
 
   DocumentReference<Map<String, dynamic>> _usuario(String userId) =>
       _firestore.collection('usuarios').doc(userId);
@@ -230,6 +233,271 @@ class GuiaService {
       throw const GuiaServiceException(
         'Ocurrió un error inesperado al guardar tu perfil.',
         code: 'unknown-error',
+      );
+    }
+  }
+
+
+    /// Consulta los guías cuyos certificados están pendientes de revisión.
+  Future<List<Map<String, dynamic>>> obtenerSolicitudesPendientes() async {
+    try {
+      final QuerySnapshot<Map<String, dynamic>> resultado =
+          await _firestore
+              .collection('usuarios')
+              .where('estadoCertificados', isEqualTo: 'en_revision')
+              .get();
+
+      return resultado.docs.map((documento) {
+        return <String, dynamic>{
+          'uid': documento.id,
+          ...documento.data(),
+        };
+      }).toList();
+    } on FirebaseException catch (error) {
+      throw GuiaServiceException(
+        'No se pudieron consultar las solicitudes de guías.',
+        code: error.code,
+      );
+    }
+  }
+
+    /// Aprueba los certificados de un guía después de revisarlos.
+  Future<void> aprobarSolicitud(String userId) async {
+    try {
+      final DocumentReference<Map<String, dynamic>> referencia =
+          _usuario(userId);
+
+      await _firestore.runTransaction((transaccion) async {
+        final DocumentSnapshot<Map<String, dynamic>> documento =
+            await transaccion.get(referencia);
+
+        if (!documento.exists) {
+          throw const GuiaServiceException(
+            'No se encontró la solicitud del guía.',
+            code: 'solicitud-no-encontrada',
+          );
+        }
+
+        final String estado =
+            documento.data()?['estadoCertificados'] as String? ?? 'pendiente';
+
+        if (estado != 'en_revision') {
+          throw const GuiaServiceException(
+            'La solicitud no está pendiente de revisión.',
+            code: 'estado-invalido',
+          );
+        }
+
+        transaccion.set(
+  referencia,
+  <String, dynamic>{
+    'rol': 'Guía turístico',
+    'estadoCertificados': 'aprobado',
+    'fechaRevisionCertificados': FieldValue.serverTimestamp(),
+    'motivoRechazoCertificados': null,
+  },
+  SetOptions(merge: true),
+);
+      });
+
+      await _notificacionService.crearNotificacion(
+        usuarioId: userId,
+        titulo: '¡Certificados aprobados!',
+        mensaje: 'Tus certificados fueron aprobados. Ya tienes el rol de guía turístico.',
+        tipo: 'aprobacion',
+      );
+    } on GuiaServiceException {
+      rethrow;
+    } on FirebaseException catch (error) {
+      throw GuiaServiceException(
+        'No se pudo aprobar la solicitud del guía.',
+        code: error.code,
+      );
+    }
+  }
+    /// Rechaza una solicitud indicando el motivo de la decisión.
+  Future<void> rechazarSolicitud({
+    required String userId,
+    required String motivo,
+  }) async {
+    final String motivoLimpio = motivo.trim();
+
+    if (motivoLimpio.isEmpty) {
+      throw const GuiaServiceException(
+        'Debes indicar el motivo del rechazo.',
+        code: 'motivo-vacio',
+      );
+    }
+
+    try {
+      final DocumentReference<Map<String, dynamic>> referencia =
+          _usuario(userId);
+
+      await _firestore.runTransaction((transaccion) async {
+        final DocumentSnapshot<Map<String, dynamic>> documento =
+            await transaccion.get(referencia);
+
+        if (!documento.exists) {
+          throw const GuiaServiceException(
+            'No se encontró la solicitud del guía.',
+            code: 'solicitud-no-encontrada',
+          );
+        }
+
+        final String estado =
+            documento.data()?['estadoCertificados'] as String? ?? 'pendiente';
+
+        if (estado != 'en_revision') {
+          throw const GuiaServiceException(
+            'La solicitud no está pendiente de revisión.',
+            code: 'estado-invalido',
+          );
+        }
+
+        transaccion.set(
+          referencia,
+          <String, dynamic>{
+            'estadoCertificados': 'rechazado',
+            'motivoRechazoCertificados': motivoLimpio,
+            'fechaRevisionCertificados': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      });
+
+      await _notificacionService.crearNotificacion(
+        usuarioId: userId,
+        titulo: 'Solicitud rechazada',
+        mensaje: 'El administrador rechazó tus certificados. Motivo: $motivoLimpio',
+        tipo: 'rechazo',
+      );
+    } on GuiaServiceException {
+      rethrow;
+    } on FirebaseException catch (error) {
+      throw GuiaServiceException(
+        'No se pudo rechazar la solicitud del guía.',
+        code: error.code,
+      );
+    }
+  }
+    /// Devuelve los documentos para que el guía pueda corregirlos y reenviarlos.
+  Future<void> solicitarCorrecciones({
+    required String userId,
+    required String motivo,
+  }) async {
+    final String motivoLimpio = motivo.trim();
+
+    if (motivoLimpio.isEmpty) {
+      throw const GuiaServiceException(
+        'Debes indicar qué documentos debe corregir el guía.',
+        code: 'motivo-vacio',
+      );
+    }
+
+    try {
+      final DocumentReference<Map<String, dynamic>> referencia =
+          _usuario(userId);
+
+      await _firestore.runTransaction((transaccion) async {
+        final DocumentSnapshot<Map<String, dynamic>> documento =
+            await transaccion.get(referencia);
+
+        if (!documento.exists) {
+          throw const GuiaServiceException(
+            'No se encontró la solicitud del guía.',
+            code: 'solicitud-no-encontrada',
+          );
+        }
+
+        final String estado =
+            documento.data()?['estadoCertificados'] as String? ?? 'pendiente';
+
+        if (estado != 'en_revision' &&
+            estado != 'aprobado' &&
+            estado != 'rechazado') {
+          throw const GuiaServiceException(
+            'No se pueden solicitar correcciones en el estado actual.',
+            code: 'estado-invalido',
+          );
+        }
+
+        transaccion.set(
+          referencia,
+          <String, dynamic>{
+            'estadoCertificados': 'requiere_correcciones',
+            'motivoRechazoCertificados': motivoLimpio,
+            'fechaRevisionCertificados': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      });
+
+      await _notificacionService.crearNotificacion(
+        usuarioId: userId,
+        titulo: 'Debes corregir tus documentos',
+        mensaje: 'El administrador solicita estos cambios: $motivoLimpio',
+        tipo: 'correcciones',
+      );
+    } on GuiaServiceException {
+      rethrow;
+    } on FirebaseException catch (error) {
+      throw GuiaServiceException(
+        'No se pudieron solicitar las correcciones.',
+        code: error.code,
+      );
+    }
+  }
+
+
+  /// Devuelve los certificados a revisión y notifica al guía.
+  Future<void> revertirAprobacion(String userId) async {
+    try {
+      final DocumentReference<Map<String, dynamic>> referencia =
+          _usuario(userId);
+
+      await _firestore.runTransaction((transaccion) async {
+        final documento = await transaccion.get(referencia);
+
+        if (!documento.exists) {
+          throw const GuiaServiceException(
+            'No se encontró la solicitud del guía.',
+            code: 'solicitud-no-encontrada',
+          );
+        }
+
+        final estado =
+            documento.data()?['estadoCertificados'] as String? ?? 'pendiente';
+
+        if (estado != 'aprobado') {
+          throw const GuiaServiceException(
+            'Solo se puede revertir una solicitud aprobada.',
+            code: 'estado-invalido',
+          );
+        }
+
+        transaccion.set(
+          referencia,
+          <String, dynamic>{
+            'estadoCertificados': 'en_revision',
+            'fechaRevisionCertificados': FieldValue.serverTimestamp(),
+            'motivoRechazoCertificados': FieldValue.delete(),
+          },
+          SetOptions(merge: true),
+        );
+      });
+
+      await _notificacionService.crearNotificacion(
+        usuarioId: userId,
+        titulo: 'Certificados en revisión',
+        mensaje: 'La aprobación de tus certificados fue revertida y tu solicitud volvió a revisión.',
+        tipo: 'reversion',
+      );
+    } on GuiaServiceException {
+      rethrow;
+    } on FirebaseException catch (error) {
+      throw GuiaServiceException(
+        'No se pudo revertir la aprobación.',
+        code: error.code,
       );
     }
   }

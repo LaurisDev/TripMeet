@@ -1,14 +1,22 @@
+
 import 'package:flutter/material.dart';
+
 import 'app_theme.dart';
 import 'buscar_lugares_screen.dart';
 import 'eventos_screen.dart';
 import 'feed_publicaciones_screen.dart';
 import 'mapa_exploracion_screen.dart';
+import 'notificaciones_screen.dart';
 import 'perfil_usuario_screen.dart';
 import 'test_recommendations_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.rol, this.avisoRevision, this.forzarIndiceMapa = false});
+  const HomeScreen({
+    super.key,
+    this.rol,
+    this.avisoRevision,
+    this.forzarIndiceMapa = false,
+  });
 
   final String? rol;
   final String? avisoRevision;
@@ -29,23 +37,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Inicio (Mapa), Lupa (Explorar), Eventos, Publicaciones y Perfil
     final List<Widget> pantallas = [
-      const MapaExploracionScreen(), // Índice 0
-      const BuscarLugaresScreen(),    // Índice 1
-      const EventosScreen(),    // Índice 2
-      const FeedPublicacionesScreen(),    // Índice 3
-      const PerfilUsuarioScreen(),    // Índice 4
+      const MapaExploracionScreen(),
+      const BuscarLugaresScreen(),
+      const EventosScreen(),
+      const FeedPublicacionesScreen(),
+      const NotificacionesScreen(),
+      const PerfilUsuarioScreen(),
     ];
 
     return Scaffold(
-      // En Eventos el botón "Crear evento" va centrado abajo; el de IA sube
-      // una fila para no taparlo.
       floatingActionButtonLocation: _indiceActual == 2
-          ? const _FabMasArriba(FloatingActionButtonLocation.endFloat, 72)
+          ? const _FabMasArriba(
+              FloatingActionButtonLocation.endFloat,
+              72,
+            )
           : FloatingActionButtonLocation.endFloat,
-      // TODO(temporal): botón solo para probar el flujo de recomendaciones
-      // con IA de punta a punta. Quitar cuando esta HU tenga su UI final.
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'probar-ia',
         onPressed: () {
@@ -61,7 +68,12 @@ class _HomeScreenState extends State<HomeScreen> {
       body: pantallas[_indiceActual],
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 20)],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 20,
+            ),
+          ],
         ),
         child: BottomNavigationBar(
           currentIndex: _indiceActual,
@@ -74,11 +86,30 @@ class _HomeScreenState extends State<HomeScreen> {
           showUnselectedLabels: false,
           elevation: 0,
           items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.map_rounded), label: 'Inicio'),
-            BottomNavigationBarItem(icon: Icon(Icons.search_rounded), label: 'Explorar'),
-            BottomNavigationBarItem(icon: Icon(Icons.event_rounded), label: 'Eventos'),
-            BottomNavigationBarItem(icon: Icon(Icons.dynamic_feed_rounded), label: 'Publicaciones'),
-            BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Perfil'),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.map_rounded),
+              label: 'Inicio',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.search_rounded),
+              label: 'Explorar',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.event_rounded),
+              label: 'Eventos',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.dynamic_feed_rounded),
+              label: 'Publicaciones',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.notifications_outlined),
+              label: 'Notificaciones',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_rounded),
+              label: 'Perfil',
+            ),
           ],
         ),
       ),
@@ -86,7 +117,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-/// Igual que [base], pero [subir] píxeles más arriba.
+/// Ubica el botón flotante unos píxeles más arriba.
 class _FabMasArriba extends FloatingActionButtonLocation {
   const _FabMasArriba(this.base, this.subir);
 

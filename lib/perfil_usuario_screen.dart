@@ -15,6 +15,8 @@ import 'publicacion_service.dart';
 import 'widgets/calificacion_estrellas.dart';
 import 'widgets/evento_guia_estilo.dart';
 import 'widgets/imagen_remota.dart';
+import 'guia_certificados_screen.dart';
+import 'captura_documento_screen.dart';
 
 /// Lee las publicaciones de un usuario, de la más reciente a la más antigua.
 typedef CargarPublicaciones = Future<List<Publicacion>> Function(String uid);
@@ -83,11 +85,38 @@ class PerfilPublico {
 
   bool get esGuia => EventoService.esGuia(datos);
 
+  /// Indica si el administrador aprobó la identidad del usuario.
+  bool get identidadVerificada => datos?['identidadVerificada'] == true;
+
+  /// Estado de la solicitud de verificación de identidad.
+  String? get estadoVerificacionIdentidad {
+    final dynamic estado = datos?['estadoVerificacionIdentidad'];
+    return estado is String ? estado : null;
+  }
+
+  /// Motivo del rechazo de la verificación de identidad, si existe.
+  String? get motivoRechazoIdentidad {
+    final dynamic motivo = datos?['motivoRechazoIdentidad'];
+    return motivo is String && motivo.trim().isNotEmpty
+        ? motivo.trim()
+        : null;
+  }
+
   /// Estado de revisión de los certificados del guía.
   String? get estadoCertificados {
     final dynamic estado = datos?['estadoCertificados'];
     return estado is String ? estado : null;
   }
+  /// Motivo indicado por el administrador al rechazar o devolver documentos.
+  String? get motivoRechazoCertificados {
+  final dynamic motivo = datos?['motivoRechazoCertificados'];
+
+  if (motivo is String && motivo.trim().isNotEmpty) {
+    return motivo.trim();
+  }
+
+  return null;
+}
 
   /// Perfil laboral del guía (`perfilLaboral`); vacío si no lo llenó.
   Map<String, dynamic> get perfilLaboral {
@@ -436,6 +465,19 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
     );
   }
 
+  void _abrirCorreccionCertificados(PerfilPublico perfil) {
+  Navigator.push<void>(
+    context,
+    MaterialPageRoute<void>(
+      builder: (_) => GuiaCertificadosScreen(
+        userId: _uid,
+        modoCorreccion: true,
+        motivoCorreccion: perfil.motivoRechazoCertificados,
+      ),
+    ),
+  );
+}
+
   Widget _buildPerfil(PerfilPublico perfil) {
     return ListView(
       padding: const EdgeInsets.all(FormStyles.s20),
@@ -490,6 +532,56 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
         if (_esPropio) ...<Widget>[
           const SizedBox(height: FormStyles.s16),
           _BotonPreferencias(onTap: _abrirPreferencias),
+          const SizedBox(height: FormStyles.s12),
+          if (perfil.identidadVerificada)
+            const ListTile(
+              key: Key('perfil-identidad-verificada'),
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                Icons.verified_rounded,
+                color: AppTheme.verdeAzulado,
+              ),
+              title: Text('Identidad verificada'),
+              subtitle: Text('Tu identidad fue aprobada.'),
+            )
+          else if (perfil.estadoVerificacionIdentidad == 'pendiente')
+            const ListTile(
+              key: Key('perfil-identidad-pendiente'),
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.hourglass_top_rounded),
+              title: Text('Verificación pendiente'),
+              subtitle: Text('El administrador está revisando tu solicitud.'),
+            )
+          else ...<Widget>[
+            OutlinedButton.icon(
+              key: const Key('perfil-verificar-identidad'),
+              style: FormStyles.botonSecundario(),
+              onPressed: () async {
+                await Navigator.push<void>(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const CapturaDocumentoScreen(),
+                  ),
+                );
+                if (mounted) await _refrescar();
+              },
+              icon: const Icon(Icons.verified_user_outlined),
+              label: Text(
+                perfil.estadoVerificacionIdentidad == 'rechazado'
+                    ? 'Volver a verificar identidad'
+                    : 'Verificar identidad',
+              ),
+            ),
+            if (perfil.estadoVerificacionIdentidad == 'rechazado') ...<Widget>[
+              const SizedBox(height: FormStyles.s8),
+              Text(
+                perfil.motivoRechazoIdentidad == null
+                    ? 'Tu solicitud fue rechazada. Puedes enviar otra solicitud.'
+                    : 'Solicitud rechazada: ${perfil.motivoRechazoIdentidad}',
+                style: FormStyles.ayuda(),
+              ),
+            ],
+          ],
         ],
         if (perfil.esGuia) ...<Widget>[
           const SizedBox(height: FormStyles.s16),
@@ -642,45 +734,83 @@ class _PerfilUsuarioScreenState extends State<PerfilUsuarioScreen> {
     );
   }
 
-  Widget _buildCertificados(PerfilPublico perfil) {
-    final CertificadoGuia? certificado = CertificadoGuia.desdePerfil(
-      perfil.datos,
-    );
+    
+Widget _buildCertificados(PerfilPublico perfil) {
+  final CertificadoGuia? certificado = CertificadoGuia.desdePerfil(
+    perfil.datos,
+  );
 
-    if (certificado != null) {
-      return CertificadoDelGuia(
-        certificado: certificado,
-        abrirEnlace: widget.abrirEnlace,
-      );
-    }
-
-    final String mensaje = switch (perfil.estadoCertificados) {
-      'en_revision' => 'Los certificados de este guía están en revisión.',
-      estadoCertificadosAprobado =>
-        'Este guía no tiene un carné de guía disponible para ver.',
-      _ => 'Este guía aún no tiene certificados aprobados.',
-    };
-
-    return Container(
-      key: const Key('perfil-sin-certificado'),
-      padding: const EdgeInsets.all(FormStyles.s12),
-      decoration: BoxDecoration(
-        color: EstiloEventoGuia.fondo.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(FormStyles.radio),
-      ),
-      child: Row(
-        children: <Widget>[
-          const Icon(
-            Icons.hourglass_empty_rounded,
-            size: 20,
-            color: EstiloEventoGuia.titulo,
-          ),
-          const SizedBox(width: FormStyles.s8),
-          Expanded(child: Text(mensaje, style: FormStyles.ayuda())),
-        ],
-      ),
+  if (certificado != null) {
+    return CertificadoDelGuia(
+      certificado: certificado,
+      abrirEnlace: widget.abrirEnlace,
     );
   }
+
+  final String mensaje = switch (perfil.estadoCertificados) {
+    'en_revision' => 'Los certificados de este guía están en revisión.',
+    estadoCertificadosAprobado =>
+      'Este guía no tiene un carné de guía disponible para ver.',
+    'rechazado' => 'La solicitud de este guía fue rechazada.',
+    'requiere_correcciones' =>
+      'Este guía debe corregir sus documentos y volver a enviarlos.',
+    'pendiente' => 'Este guía aún no ha enviado sus certificados.',
+    _ => 'Este guía aún no tiene certificados aprobados.',
+  };
+
+  final bool mostrarMotivo =
+      _esPropio &&
+      (perfil.estadoCertificados == 'rechazado' ||
+          perfil.estadoCertificados == 'requiere_correcciones');
+
+  final String? motivo =
+      mostrarMotivo ? perfil.motivoRechazoCertificados : null;
+
+  final bool puedeCorregir = mostrarMotivo;
+
+  return Container(
+    key: const Key('perfil-sin-certificado'),
+    padding: const EdgeInsets.all(FormStyles.s12),
+    decoration: BoxDecoration(
+      color: EstiloEventoGuia.fondo.withValues(alpha: 0.5),
+      borderRadius: BorderRadius.circular(FormStyles.radio),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const Icon(
+          Icons.hourglass_empty_rounded,
+          size: 20,
+          color: EstiloEventoGuia.titulo,
+        ),
+        const SizedBox(width: FormStyles.s8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(mensaje, style: FormStyles.ayuda()),
+              if (motivo != null && motivo.trim().isNotEmpty) ...<Widget>[
+                const SizedBox(height: FormStyles.s8),
+                Text(
+                  'Motivo: ${motivo.trim()}',
+                  style: FormStyles.ayuda(),
+                ),
+              ],
+              if (puedeCorregir) ...<Widget>[
+                const SizedBox(height: FormStyles.s12),
+                ElevatedButton(
+                  key: const Key('boton-corregir-certificados'),
+                  onPressed: () => _abrirCorreccionCertificados(perfil),
+                  child: const Text('Corregir documentos'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
 }
 
 /// Tarjeta superior: foto, nombre y rol. Los guías llevan un aro dorado y,
@@ -880,7 +1010,9 @@ class _EncabezadoPerfil extends StatelessWidget {
   Widget build(BuildContext context) {
     final String? rol = perfil.rol;
     final bool esGuia = perfil.esGuia;
-    final bool verificado = EventoService.esGuiaAprobado(perfil.datos);
+    final bool guiaVerificado = EventoService.esGuiaAprobado(perfil.datos);
+    final bool identidadVerificada = perfil.identidadVerificada;
+    final bool verificado = guiaVerificado || identidadVerificada;
 
     return Container(
       key: const Key('perfil-encabezado'),
@@ -955,13 +1087,20 @@ class _EncabezadoPerfil extends StatelessWidget {
                       ? EstiloEventoGuia.textoEtiqueta
                       : AppTheme.azulPetroleo,
                 ),
-                if (verificado)
+                if (guiaVerificado)
                   const _Pastilla(
                     icono: Icons.verified_outlined,
                     texto: 'Verificado',
                     fondo: EstiloEventoGuia.fondo,
                     color: EstiloEventoGuia.texto,
                   ),
+                if (identidadVerificada)
+                  _Pastilla(
+  icono: Icons.verified_outlined,
+  texto: 'Identidad verificada',
+  fondo: AppTheme.verdeAzulado.withValues(alpha: 0.12),
+  color: AppTheme.azulPetroleo,
+),
               ],
             ),
           ],

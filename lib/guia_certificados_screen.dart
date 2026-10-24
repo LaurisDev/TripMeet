@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'app_theme.dart';
+
 import 'form_styles.dart';
 import 'guia_perfil_laboral_screen.dart';
 import 'guia_service.dart';
@@ -19,13 +19,18 @@ class GuiaCertificadosScreen extends StatefulWidget {
     super.key,
     required this.userId,
     this.guiaService,
+    this.modoCorreccion = false,
+    this.motivoCorreccion,
   });
 
   final String userId;
   final GuiaService? guiaService;
+  final bool modoCorreccion;
+  final String? motivoCorreccion;
 
   @override
-  State<GuiaCertificadosScreen> createState() => _GuiaCertificadosScreenState();
+  State<GuiaCertificadosScreen> createState() =>
+      _GuiaCertificadosScreenState();
 }
 
 class _GuiaCertificadosScreenState extends State<GuiaCertificadosScreen> {
@@ -105,13 +110,20 @@ class _GuiaCertificadosScreenState extends State<GuiaCertificadosScreen> {
         antecedentesJudiciales: _antecedentes!,
         adicionales: _adicionales,
       );
-      if (!mounted) return;
-      Navigator.push(
-        context,
-        MaterialPageRoute<void>(
-          builder: (_) => GuiaPerfilLaboralScreen(userId: widget.userId),
-        ),
-      );
+            if (!mounted) return;
+
+      if (widget.modoCorreccion) {
+        Navigator.pop(context);
+      } else {
+        Navigator.push(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => GuiaPerfilLaboralScreen(
+              userId: widget.userId,
+            ),
+          ),
+        );
+      }
     } on GuiaServiceException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -182,15 +194,35 @@ class _GuiaCertificadosScreenState extends State<GuiaCertificadosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return RegistroScaffold(
-      paso: 2,
-      totalPasos: 3,
-      titulo: 'Verifica tu identidad',
-      subtitulo:
-          'Sube tus documentos para validar tu perfil como guía turístico.',
+   return RegistroScaffold(
+  paso: 2,
+  totalPasos: 3,
+  titulo: widget.modoCorreccion
+      ? 'Corrige tus documentos'
+      : 'Verifica tu identidad',
+  subtitulo: widget.modoCorreccion
+      ? 'Actualiza los documentos solicitados y vuelve a enviarlos.'
+      : 'Sube tus documentos para validar tu perfil como guía turístico.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          if (widget.modoCorreccion &&
+    widget.motivoCorreccion != null &&
+    widget.motivoCorreccion!.trim().isNotEmpty) ...<Widget>[
+  Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(FormStyles.s12),
+    decoration: BoxDecoration(
+      color: Colors.orange.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(FormStyles.radio),
+    ),
+    child: Text(
+      'Correcciones solicitadas:\n${widget.motivoCorreccion!.trim()}',
+      style: FormStyles.ayuda(),
+    ),
+  ),
+  const SizedBox(height: FormStyles.s16),
+],
           ArchivoPickerField(
             etiqueta: 'Carné de guía turístico',
             obligatorio: true,
@@ -241,19 +273,14 @@ class _GuiaCertificadosScreenState extends State<GuiaCertificadosScreen> {
                       color: Colors.white,
                     ),
                   )
-                : const Text('Continuar'),
+                : Text(
+    widget.modoCorreccion
+        ? 'Reenviar documentos'
+        : 'Continuar',
+  ),
           ),
           const SizedBox(height: FormStyles.s8),
-          TextButton(
-            onPressed: _cargando ? null : _completarDespues,
-            child: Text(
-              'Completar después',
-              style: FormStyles.cuerpo(
-                weight: FontWeight.w600,
-                color: AppTheme.verdeAzulado,
-              ),
-            ),
-          ),
+          
         ],
       ),
     );
