@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -39,7 +41,9 @@ String fechaRelativaPublicacion(DateTime fecha, {required DateTime ahora}) {
 
 /// Sección "Publicaciones": feed con las publicaciones de todos los usuarios
 /// (incluidas las propias), una debajo de otra y de la más reciente a la más
-/// antigua. Carga más al acercarse al final, permite dar "me gusta" (botón
+/// antigua. Se puede filtrar por ubicación (buscador arriba o tocando la
+/// ubicación de una publicación). Carga más al acercarse al final, permite
+/// dar "me gusta" (botón
 /// o doble toque en la foto) y abre el detalle existente, donde el autor
 /// puede editar o eliminar.
 class FeedPublicacionesScreen extends StatefulWidget {
@@ -70,6 +74,11 @@ class _FeedPublicacionesScreenState extends State<FeedPublicacionesScreen> {
       widget.service ?? PublicacionService();
   late final DateTime Function() _reloj = widget.reloj ?? DateTime.now;
   final ScrollController _scroll = ScrollController();
+  final TextEditingController _filtroController = TextEditingController();
+  Timer? _esperaFiltro;
+
+  /// Ubicación por la que se filtra el feed; `null` muestra todas.
+  String? _filtroUbicacion;
 
   List<PublicacionEnFeed> _items = <PublicacionEnFeed>[];
   PaginaFeed? _ultimaPagina;
@@ -96,7 +105,31 @@ class _FeedPublicacionesScreenState extends State<FeedPublicacionesScreen> {
   @override
   void dispose() {
     _scroll.dispose();
+    _filtroController.dispose();
+    _esperaFiltro?.cancel();
     super.dispose();
+  }
+
+  /// Aplica el filtro un momento después de dejar de escribir, para no
+  /// consultar Firestore con cada letra.
+  void _alEscribirFiltro(String texto) {
+    setState(() {});
+    _esperaFiltro?.cancel();
+    _esperaFiltro = Timer(
+      const Duration(milliseconds: 400),
+      () => _filtrarPorUbicacion(texto),
+    );
+  }
+
+  void _filtrarPorUbicacion(String texto) {
+    _esperaFiltro?.cancel();
+    final String? filtro = PublicacionService.normalizarUbicacion(texto);
+    if (_filtroController.text != texto) {
+      _filtroController.text = texto;
+    }
+    if (filtro == _filtroUbicacion) return;
+    _filtroUbicacion = filtro;
+    _recargar();
   }
 
   void _alDesplazar() {
@@ -115,7 +148,9 @@ class _FeedPublicacionesScreenState extends State<FeedPublicacionesScreen> {
     });
 
     try {
-      final PaginaFeed pagina = await _service.obtenerFeed();
+      final PaginaFeed pagina = await _service.obtenerFeed(
+        ubicacion: _filtroUbicacion,
+      );
       if (!mounted || generacion != _generacion) return;
       setState(() {
         _items = pagina.publicaciones;
@@ -280,7 +315,58 @@ class _FeedPublicacionesScreenState extends State<FeedPublicacionesScreen> {
         ],
       ),
       body: SafeArea(
-        child: RefreshIndicator(onRefresh: _recargar, child: _buildContenido()),
+        child: Column(
+          children: <Widget>[
+            _buildFiltro(),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _recargar,
+                child: _buildContenido(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFiltro() {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            FormStyles.s12,
+            FormStyles.s12,
+            FormStyles.s12,
+            0,
+          ),
+          child: TextField(
+            key: const Key('feed-filtro-ubicacion'),
+            controller: _filtroController,
+            onChanged: _alEscribirFiltro,
+            onSubmitted: _filtrarPorUbicacion,
+            textInputAction: TextInputAction.search,
+            decoration:
+                FormStyles.input(
+                  label: 'Buscar por ubicación',
+                  hint: 'Ej: Medellín, Guatapé, Cartagena...',
+                ).copyWith(
+                  prefixIcon: const Icon(
+                    Icons.place_outlined,
+                    color: AppTheme.verdeAzulado,
+                  ),
+                  suffixIcon: _filtroController.text.isEmpty
+                      ? null
+                      : IconButton(
+                          key: const Key('feed-filtro-limpiar'),
+                          tooltip: 'Quitar filtro',
+                          onPressed: () => _filtrarPorUbicacion(''),
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                ),
+          ),
+        ),
       ),
     );
   }
@@ -311,7 +397,9 @@ class _FeedPublicacionesScreenState extends State<FeedPublicacionesScreen> {
           ),
           const SizedBox(height: FormStyles.s12),
           Text(
-            'Todavía no hay publicaciones. ¡Comparte la primera!',
+            _filtroUbicacion == null
+                ? 'Todavía no hay publicaciones. ¡Comparte la primera!'
+                : 'No hay publicaciones en "$_filtroUbicacion".',
             textAlign: TextAlign.center,
             style: FormStyles.subtitulo(pequena: true),
           ),
@@ -337,6 +425,7 @@ class _FeedPublicacionesScreenState extends State<FeedPublicacionesScreen> {
           esPropia: uidActual != null && uidActual == item.publicacion.uid,
           onAbrir: () => _abrirDetalle(item),
           onMeGusta: (bool meGusta) => _cambiarMeGusta(item, meGusta),
+          onUbicacion: _filtrarPorUbicacion,
         );
       },
     );
@@ -363,7 +452,9 @@ class _FeedPublicacionesScreenState extends State<FeedPublicacionesScreen> {
       );
     } else {
       contenido = Text(
-        'Ya viste todas las publicaciones.',
+        _filtroUbicacion == null
+            ? 'Ya viste todas las publicaciones.'
+            : 'Ya viste todas las publicaciones de esta ubicación.',
         style: FormStyles.ayuda(),
       );
     }
@@ -376,7 +467,8 @@ class _FeedPublicacionesScreenState extends State<FeedPublicacionesScreen> {
 }
 
 /// Una publicación del feed como tarjeta independiente, en este orden:
-/// autor (avatar, alias, rol, fecha y "Editado"), foto, acciones ("me
+/// autor (avatar, alias, rol, fecha, "Editado" y ubicación), foto,
+/// acciones ("me
 /// gusta" y, si es propia, opciones) y descripción.
 class _TarjetaPublicacion extends StatefulWidget {
   const _TarjetaPublicacion({
@@ -385,6 +477,7 @@ class _TarjetaPublicacion extends StatefulWidget {
     required this.esPropia,
     required this.onAbrir,
     required this.onMeGusta,
+    required this.onUbicacion,
     super.key,
   });
 
@@ -395,6 +488,9 @@ class _TarjetaPublicacion extends StatefulWidget {
   final bool esPropia;
   final VoidCallback onAbrir;
   final ValueChanged<bool> onMeGusta;
+
+  /// Se llama al tocar la ubicación, para filtrar el feed por ella.
+  final ValueChanged<String> onUbicacion;
 
   @override
   State<_TarjetaPublicacion> createState() => _TarjetaPublicacionState();
@@ -541,6 +637,11 @@ class _TarjetaPublicacionState extends State<_TarjetaPublicacion> {
                     ],
                   ],
                 ),
+                if (publicacion.ubicacion != null)
+                  _UbicacionPublicacion(
+                    ubicacion: publicacion.ubicacion!,
+                    onTap: () => widget.onUbicacion(publicacion.ubicacion!),
+                  ),
               ],
             ),
           ),
@@ -671,6 +772,46 @@ class _TarjetaPublicacionState extends State<_TarjetaPublicacion> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// Ubicación bajo el nombre del autor; al tocarla filtra el feed por ella.
+class _UbicacionPublicacion extends StatelessWidget {
+  const _UbicacionPublicacion({required this.ubicacion, required this.onTap});
+
+  final String ubicacion;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Row(
+          children: <Widget>[
+            const Icon(
+              Icons.place_outlined,
+              size: 13,
+              color: AppTheme.verdeAzulado,
+            ),
+            const SizedBox(width: 2),
+            Flexible(
+              child: Text(
+                ubicacion,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: FormStyles.cuerpo(
+                  size: 12,
+                  weight: FontWeight.w600,
+                  color: AppTheme.verdeAzulado,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

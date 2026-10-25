@@ -7,8 +7,8 @@ import 'publicacion_service.dart';
 import 'widgets/archivo_picker.dart';
 import 'widgets/aviso_error.dart';
 
-/// Pantalla para editar una publicación propia: precarga la foto y la
-/// descripción actuales y permite cambiar el texto o reemplazar la foto.
+/// Pantalla para editar una publicación propia: precarga la foto, la
+/// ubicación y la descripción actuales y permite cambiarlas.
 ///
 /// Al guardar hace `pop` con la [Publicacion] actualizada; al cancelar hace
 /// `pop` sin resultado y la publicación conserva su contenido original. Si
@@ -37,6 +37,9 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
       widget.service ?? PublicacionService();
   late final TextEditingController _descripcionController =
       TextEditingController(text: widget.publicacion.descripcion ?? '');
+  late final TextEditingController _ubicacionController = TextEditingController(
+    text: widget.publicacion.ubicacion ?? '',
+  );
 
   ArchivoLocal? _nuevaImagen;
   bool _guardando = false;
@@ -48,17 +51,21 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
   bool get _hayCambios =>
       _nuevaImagen != null ||
       PublicacionService.normalizarDescripcion(_descripcionController.text) !=
-          widget.publicacion.descripcion;
+          widget.publicacion.descripcion ||
+      PublicacionService.normalizarUbicacion(_ubicacionController.text) !=
+          widget.publicacion.ubicacion;
 
   @override
   void initState() {
     super.initState();
     _descripcionController.addListener(() => setState(() {}));
+    _ubicacionController.addListener(() => setState(() {}));
   }
 
   @override
   void dispose() {
     _descripcionController.dispose();
+    _ubicacionController.dispose();
     super.dispose();
   }
 
@@ -96,6 +103,7 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
       final Publicacion actualizada = await _service.editarPublicacion(
         publicacionId: widget.publicacion.id,
         descripcion: _descripcionController.text,
+        ubicacion: _ubicacionController.text,
         nuevaImagen: _nuevaImagen,
       );
       if (!mounted) return;
@@ -116,7 +124,10 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
     final bool? descartar = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) => AlertDialog(
-        title: Text('¿Descartar cambios?', style: FormStyles.titulo(pequena: true)),
+        title: Text(
+          '¿Descartar cambios?',
+          style: FormStyles.titulo(pequena: true),
+        ),
         content: Text(
           'Los cambios que hiciste en esta publicación no se guardarán.',
           style: FormStyles.subtitulo(pequena: true),
@@ -166,6 +177,24 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
               ),
               const SizedBox(height: FormStyles.s20),
               TextField(
+                key: const Key('editar-ubicacion'),
+                controller: _ubicacionController,
+                enabled: !_guardando,
+                maxLength: PublicacionService.largoMaximoUbicacion,
+                textCapitalization: TextCapitalization.words,
+                decoration:
+                    FormStyles.input(
+                      label: 'Ubicación (opcional)',
+                      hint: '¿Dónde fue? Ej: Guatapé, Antioquia',
+                    ).copyWith(
+                      prefixIcon: const Icon(
+                        Icons.place_outlined,
+                        color: AppTheme.verdeAzulado,
+                      ),
+                    ),
+              ),
+              const SizedBox(height: FormStyles.s12),
+              TextField(
                 key: const Key('editar-descripcion'),
                 controller: _descripcionController,
                 enabled: !_guardando,
@@ -197,8 +226,9 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
               const SizedBox(height: FormStyles.s12),
               OutlinedButton(
                 style: FormStyles.botonSecundario(),
-                onPressed:
-                    _guardando ? null : () => Navigator.of(context).maybePop(),
+                onPressed: _guardando
+                    ? null
+                    : () => Navigator.of(context).maybePop(),
                 child: const Text('Cancelar'),
               ),
             ],
@@ -247,13 +277,16 @@ class _FotoEditable extends StatelessWidget {
               Image.network(
                 imagenUrlActual,
                 fit: BoxFit.cover,
-                errorBuilder: (BuildContext context, Object error,
-                        StackTrace? stackTrace) =>
-                    Icon(
-                  Icons.broken_image_outlined,
-                  size: 48,
-                  color: AppTheme.textoSuave.withValues(alpha: 0.4),
-                ),
+                errorBuilder:
+                    (
+                      BuildContext context,
+                      Object error,
+                      StackTrace? stackTrace,
+                    ) => Icon(
+                      Icons.broken_image_outlined,
+                      size: 48,
+                      color: AppTheme.textoSuave.withValues(alpha: 0.4),
+                    ),
               ),
             Positioned(
               right: FormStyles.s8,

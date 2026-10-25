@@ -285,4 +285,150 @@ void main() {
       },
     );
   });
+
+  group('ubicación', () {
+    test('normaliza palabras sin tildes, mayúsculas ni signos', () {
+      expect(
+        PublicacionService.palabrasDeBusqueda('  Guatapé,  ANTIOQUIA '),
+        <String>['guatape', 'antioquia'],
+      );
+      expect(
+        PublicacionService.normalizarUbicacion('  Santa   Marta '),
+        'Santa Marta',
+      );
+      expect(PublicacionService.normalizarUbicacion('   '), isNull);
+    });
+
+    test('coincide por inicio de palabra, en cualquier orden', () {
+      expect(
+        PublicacionService.coincideUbicacion('Medellín, Colombia', 'mede'),
+        isTrue,
+      );
+      expect(
+        PublicacionService.coincideUbicacion(
+          'Medellín, Colombia',
+          'colombia medellin',
+        ),
+        isTrue,
+      );
+      expect(
+        PublicacionService.coincideUbicacion('Medellín, Colombia', 'bogota'),
+        isFalse,
+      );
+      expect(PublicacionService.coincideUbicacion(null, 'mede'), isFalse);
+    });
+
+    test('crear guarda la ubicación y sus términos de búsqueda', () async {
+      await servicio().crearPublicacion(
+        imagenUrl: 'https://res.cloudinary.com/demo/u.jpg',
+        imagenPublicId: 'tripmeet/publicaciones/u',
+        ubicacion: ' Guatapé, Antioquia ',
+      );
+
+      final Map<String, dynamic> datos =
+          (await firestore.collection('publicaciones').get()).docs.single
+              .data();
+      expect(datos['ubicacion'], 'Guatapé, Antioquia');
+      expect(
+        datos['ubicacionTerminos'],
+        containsAll(<String>['g', 'guata', 'guatape', 'antioquia']),
+      );
+    });
+
+    test('rechaza una ubicación demasiado larga', () {
+      expect(
+        servicio().crearPublicacion(
+          imagenUrl: 'https://res.cloudinary.com/demo/u.jpg',
+          imagenPublicId: 'tripmeet/publicaciones/u',
+          ubicacion: 'a' * (PublicacionService.largoMaximoUbicacion + 1),
+        ),
+        lanzaCodigo('ubicacion-invalida'),
+      );
+    });
+
+    test(
+      'el feed filtra por ubicación, de la más reciente a la más antigua',
+      () async {
+        final PublicacionService s = servicio();
+        for (final (String ubicacion, int dia) in <(String, int)>[
+          ('Medellín, Antioquia', 1),
+          ('Guatapé, Antioquia', 3),
+          ('Cartagena, Bolívar', 2),
+        ]) {
+          await s.crearPublicacion(
+            imagenUrl: 'https://res.cloudinary.com/demo/$dia.jpg',
+            imagenPublicId: 'tripmeet/publicaciones/$dia',
+            ubicacion: ubicacion,
+          );
+          final QueryDocumentSnapshot<Map<String, dynamic>> ultimo =
+              (await firestore
+                      .collection('publicaciones')
+                      .where('ubicacion', isEqualTo: ubicacion)
+                      .get())
+                  .docs
+                  .single;
+          await ultimo.reference.update(<String, dynamic>{
+            'fechaCreacion': Timestamp.fromDate(DateTime(2026, 10, dia)),
+          });
+        }
+        await publicar('sin-ubicacion', 'yo', DateTime(2026, 10, 4));
+
+        List<String?> ubicaciones(PaginaFeed p) => p.publicaciones
+            .map((PublicacionEnFeed i) => i.publicacion.ubicacion)
+            .toList();
+
+        final PaginaFeed antioquia = await s.obtenerFeed(
+          ubicacion: 'antioquía',
+        );
+        expect(ubicaciones(antioquia), <String>[
+          'Guatapé, Antioquia',
+          'Medellín, Antioquia',
+        ]);
+        expect(antioquia.hayMas, isFalse);
+
+        expect(ubicaciones(await s.obtenerFeed(ubicacion: 'carta')), <String>[
+          'Cartagena, Bolívar',
+        ]);
+        expect(
+          (await s.obtenerFeed(ubicacion: 'bogota')).publicaciones,
+          isEmpty,
+        );
+        expect(
+          (await s.obtenerFeed(ubicacion: '  ')).publicaciones,
+          hasLength(4),
+        );
+      },
+    );
+
+    test('editar cambia o quita la ubicación y sus términos', () async {
+      final PublicacionService s = servicio();
+      await s.crearPublicacion(
+        imagenUrl: 'https://res.cloudinary.com/demo/e.jpg',
+        imagenPublicId: 'tripmeet/publicaciones/e',
+        ubicacion: 'Medellín',
+      );
+      final String id =
+          (await firestore.collection('publicaciones').get()).docs.single.id;
+
+      final Publicacion editada = await s.editarPublicacion(
+        publicacionId: id,
+        ubicacion: 'Jardín, Antioquia',
+      );
+      expect(editada.ubicacion, 'Jardín, Antioquia');
+      expect(
+        (await s.obtenerFeed(ubicacion: 'jardin')).publicaciones,
+        hasLength(1),
+      );
+      expect(
+        (await s.obtenerFeed(ubicacion: 'medellin')).publicaciones,
+        isEmpty,
+      );
+
+      final Publicacion sinUbicacion = await s.editarPublicacion(
+        publicacionId: id,
+        ubicacion: '',
+      );
+      expect(sinUbicacion.ubicacion, isNull);
+    });
+  });
 }

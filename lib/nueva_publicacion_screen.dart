@@ -9,20 +9,20 @@ import 'widgets/archivo_picker.dart';
 import 'widgets/aviso_error.dart';
 import 'widgets/foto_seleccionada.dart';
 
-/// Pantalla para crear una publicación: elegir foto (obligatoria), escribir
-/// una descripción (opcional) y publicar. Se abre desde el Perfil del
+/// Pantalla para crear una publicación: elegir foto (obligatoria), indicar
+/// dónde fue (opcional), escribir una descripción (opcional) y publicar. Se abre desde el Perfil del
 /// turista.
 class NuevaPublicacionScreen extends StatefulWidget {
   const NuevaPublicacionScreen({super.key});
 
   @override
-  State<NuevaPublicacionScreen> createState() =>
-      _NuevaPublicacionScreenState();
+  State<NuevaPublicacionScreen> createState() => _NuevaPublicacionScreenState();
 }
 
 class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
   final PublicacionService _service = PublicacionService();
   final TextEditingController _descripcionController = TextEditingController();
+  final TextEditingController _ubicacionController = TextEditingController();
 
   ArchivoLocal? _imagen;
   bool _publicando = false;
@@ -31,6 +31,7 @@ class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
   @override
   void dispose() {
     _descripcionController.dispose();
+    _ubicacionController.dispose();
     super.dispose();
   }
 
@@ -73,6 +74,7 @@ class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
         imagenUrl: subida.secureUrl,
         imagenPublicId: subida.publicId,
         descripcion: _descripcionController.text,
+        ubicacion: _ubicacionController.text,
       );
       if (!mounted) return;
       Navigator.of(context).pop(true);
@@ -98,6 +100,24 @@ class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
               onTap: _seleccionarImagen,
             ),
             const SizedBox(height: FormStyles.s20),
+            TextField(
+              key: const Key('nueva-ubicacion'),
+              controller: _ubicacionController,
+              enabled: !_publicando,
+              maxLength: PublicacionService.largoMaximoUbicacion,
+              textCapitalization: TextCapitalization.words,
+              decoration:
+                  FormStyles.input(
+                    label: 'Ubicación (opcional)',
+                    hint: '¿Dónde fue? Ej: Guatapé, Antioquia',
+                  ).copyWith(
+                    prefixIcon: const Icon(
+                      Icons.place_outlined,
+                      color: AppTheme.verdeAzulado,
+                    ),
+                  ),
+            ),
+            const SizedBox(height: FormStyles.s12),
             TextField(
               controller: _descripcionController,
               enabled: !_publicando,

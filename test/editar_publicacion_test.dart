@@ -29,6 +29,7 @@ class _ServicioFalso extends Fake implements PublicacionService {
   Future<Publicacion> editarPublicacion({
     required String publicacionId,
     String? descripcion,
+    String? ubicacion,
     ArchivoLocal? nuevaImagen,
   }) async {
     llamadas++;
@@ -38,10 +39,12 @@ class _ServicioFalso extends Fake implements PublicacionService {
       actual: _original,
       uidUsuario: uidUsuario,
       descripcion: descripcion,
+      ubicacion: ubicacion,
       nuevaImagen: nuevaImagen,
     );
     return edicion.actual.copyWith(
       descripcion: () => edicion.descripcion,
+      ubicacion: () => edicion.ubicacion,
       editado: true,
       fechaEdicion: DateTime(2026, 10, 2, 9, 30),
     );

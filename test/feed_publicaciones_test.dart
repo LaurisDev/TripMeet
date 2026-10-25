@@ -66,6 +66,7 @@ class _ServicioFalso extends Fake implements PublicacionService {
   Future<PaginaFeed> obtenerFeed({
     DocumentSnapshot<Map<String, dynamic>>? despuesDe,
     int limite = PublicacionService.tamanoPaginaFeed,
+    String? ubicacion,
   }) async {
     if (errorFeed != null) throw errorFeed!;
     paginasPedidas++;
@@ -567,6 +568,7 @@ class _ServicioConPausa extends Fake implements PublicacionService {
   Future<PaginaFeed> obtenerFeed({
     DocumentSnapshot<Map<String, dynamic>>? despuesDe,
     int limite = PublicacionService.tamanoPaginaFeed,
+    String? ubicacion,
   }) async {
     if (recargas > 0 && pendiente == null) {
       // Página siguiente: espera y devuelve una publicación "vieja".

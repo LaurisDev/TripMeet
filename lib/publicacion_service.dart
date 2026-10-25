@@ -27,6 +27,7 @@ class Publicacion {
     required this.imagenPublicId,
     required this.fechaCreacion,
     this.descripcion,
+    this.ubicacion,
     this.editado = false,
     this.fechaEdicion,
   });
@@ -36,6 +37,10 @@ class Publicacion {
   final String imagenUrl;
   final String imagenPublicId;
   final String? descripcion;
+
+  /// Dónde se tomaron las fotos o dónde estuvo el autor (por ejemplo,
+  /// "Guatapé, Antioquia"); `null` si no la indicó.
+  final String? ubicacion;
   final DateTime fechaCreacion;
 
   /// `true` si el autor modificó la publicación después de crearla.
@@ -58,6 +63,9 @@ class Publicacion {
       descripcion: (descripcion == null || descripcion.trim().isEmpty)
           ? null
           : descripcion,
+      ubicacion: PublicacionService.normalizarUbicacion(
+        datos['ubicacion'] as String?,
+      ),
       fechaCreacion:
           (datos['fechaCreacion'] as Timestamp?)?.toDate() ?? DateTime.now(),
       // Las publicaciones creadas antes de existir estos campos no los
@@ -67,12 +75,14 @@ class Publicacion {
     );
   }
 
-  /// Copia con los campos editables reemplazados. [descripcion] es una
-  /// función para poder distinguir "no cambiar" de "dejar en `null`".
+  /// Copia con los campos editables reemplazados. [descripcion] y
+  /// [ubicacion] son funciones para poder distinguir "no cambiar" de "dejar
+  /// en `null`".
   Publicacion copyWith({
     String? imagenUrl,
     String? imagenPublicId,
     String? Function()? descripcion,
+    String? Function()? ubicacion,
     bool? editado,
     DateTime? fechaEdicion,
   }) {
@@ -82,6 +92,7 @@ class Publicacion {
       imagenUrl: imagenUrl ?? this.imagenUrl,
       imagenPublicId: imagenPublicId ?? this.imagenPublicId,
       descripcion: descripcion != null ? descripcion() : this.descripcion,
+      ubicacion: ubicacion != null ? ubicacion() : this.ubicacion,
       fechaCreacion: fechaCreacion,
       editado: editado ?? this.editado,
       fechaEdicion: fechaEdicion ?? this.fechaEdicion,
@@ -96,6 +107,8 @@ class EdicionPublicacion {
     required this.actual,
     required this.cambiaDescripcion,
     this.descripcion,
+    this.cambiaUbicacion = false,
+    this.ubicacion,
     this.nuevaImagen,
   });
 
@@ -104,9 +117,14 @@ class EdicionPublicacion {
 
   /// Descripción normalizada (sin espacios sobrantes; `null` si quedó vacía).
   final String? descripcion;
+  final bool cambiaUbicacion;
+
+  /// Ubicación normalizada (sin espacios sobrantes; `null` si quedó vacía).
+  final String? ubicacion;
   final ArchivoLocal? nuevaImagen;
 
-  bool get hayCambios => cambiaDescripcion || nuevaImagen != null;
+  bool get hayCambios =>
+      cambiaDescripcion || cambiaUbicacion || nuevaImagen != null;
 }
 
 /// Autor de una publicación tal como se muestra en el feed, calculado desde
@@ -255,6 +273,90 @@ class PublicacionService {
     return (limpia == null || limpia.isEmpty) ? null : limpia;
   }
 
+  /// Largo máximo de la ubicación de una publicación.
+  static const int largoMaximoUbicacion = 100;
+
+  /// Quita espacios sobrantes (también los repetidos entre palabras) y
+  /// convierte una ubicación vacía en `null`.
+  static String? normalizarUbicacion(String? ubicacion) {
+    final String? limpia = ubicacion?.trim().replaceAll(RegExp(r'\s+'), ' ');
+    return (limpia == null || limpia.isEmpty) ? null : limpia;
+  }
+
+  static const Map<String, String> _sinTilde = <String, String>{
+    'á': 'a',
+    'à': 'a',
+    'ä': 'a',
+    'â': 'a',
+    'ã': 'a',
+    'é': 'e',
+    'è': 'e',
+    'ë': 'e',
+    'ê': 'e',
+    'í': 'i',
+    'ì': 'i',
+    'ï': 'i',
+    'î': 'i',
+    'ó': 'o',
+    'ò': 'o',
+    'ö': 'o',
+    'ô': 'o',
+    'õ': 'o',
+    'ú': 'u',
+    'ù': 'u',
+    'ü': 'u',
+    'û': 'u',
+    'ñ': 'n',
+    'ç': 'c',
+  };
+
+  /// Palabras de [texto] para buscar: en minúsculas, sin tildes y sin
+  /// signos de puntuación. "Guatapé, Antioquia" → `[guatape, antioquia]`.
+  static List<String> palabrasDeBusqueda(String? texto) {
+    if (texto == null) return const <String>[];
+    final String sinTildes = texto
+        .toLowerCase()
+        .split('')
+        .map((String c) => _sinTilde[c] ?? c)
+        .join();
+    return sinTildes
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((String palabra) => palabra.isNotEmpty)
+        .toList();
+  }
+
+  /// Términos que se guardan en `ubicacionTerminos` para poder buscar por
+  /// ubicación con `array-contains`: todos los prefijos de cada palabra, para
+  /// que "mede" encuentre "Medellín".
+  static List<String> terminosDeUbicacion(String? ubicacion) {
+    final Set<String> terminos = <String>{};
+    for (final String palabra in palabrasDeBusqueda(ubicacion)) {
+      for (int largo = 1; largo <= palabra.length; largo++) {
+        terminos.add(palabra.substring(0, largo));
+      }
+    }
+    return terminos.toList();
+  }
+
+  /// `true` si [ubicacion] coincide con la búsqueda [filtro]: cada palabra
+  /// del filtro debe ser el inicio de alguna palabra de la ubicación, sin
+  /// importar tildes ni mayúsculas.
+  static bool coincideUbicacion(String? ubicacion, String filtro) {
+    final List<String> palabras = palabrasDeBusqueda(ubicacion);
+    return palabrasDeBusqueda(filtro).every(
+      (String buscada) =>
+          palabras.any((String palabra) => palabra.startsWith(buscada)),
+    );
+  }
+
+  static String? _validarUbicacion(String? ubicacion) {
+    if (ubicacion != null && ubicacion.length > largoMaximoUbicacion) {
+      return 'La ubicación no puede tener más de '
+          '$largoMaximoUbicacion caracteres.';
+    }
+    return null;
+  }
+
   /// Comprueba que [uidUsuario] pueda [accion] (por ejemplo, "editar" o
   /// "eliminar") la publicación [actual], sin tocar Firestore:
   ///
@@ -301,6 +403,7 @@ class PublicacionService {
     required Publicacion? actual,
     required String? uidUsuario,
     required String? descripcion,
+    String? ubicacion,
     ArchivoLocal? nuevaImagen,
   }) {
     final Publicacion verificada = validarAutoria(
@@ -316,10 +419,23 @@ class PublicacionService {
     }
 
     final String? nuevaDescripcion = normalizarDescripcion(descripcion);
+    // `null` = no tocar la ubicación; texto vacío = quitarla.
+    final String? nuevaUbicacion = ubicacion == null
+        ? verificada.ubicacion
+        : normalizarUbicacion(ubicacion);
+    final String? errorUbicacion = _validarUbicacion(nuevaUbicacion);
+    if (errorUbicacion != null) {
+      throw PublicacionServiceException(
+        errorUbicacion,
+        code: 'ubicacion-invalida',
+      );
+    }
     return EdicionPublicacion(
       actual: verificada,
       cambiaDescripcion: nuevaDescripcion != verificada.descripcion,
       descripcion: nuevaDescripcion,
+      cambiaUbicacion: nuevaUbicacion != verificada.ubicacion,
+      ubicacion: nuevaUbicacion,
       nuevaImagen: nuevaImagen,
     );
   }
@@ -350,6 +466,7 @@ class PublicacionService {
     required String imagenUrl,
     required String imagenPublicId,
     String? descripcion,
+    String? ubicacion,
   }) async {
     final User? usuario = _auth.currentUser;
     if (usuario == null) {
@@ -358,20 +475,30 @@ class PublicacionService {
         code: 'user-not-authenticated',
       );
     }
+    final String? ubicacionLimpia = normalizarUbicacion(ubicacion);
+    final String? errorUbicacion = _validarUbicacion(ubicacionLimpia);
+    if (errorUbicacion != null) {
+      throw PublicacionServiceException(
+        errorUbicacion,
+        code: 'ubicacion-invalida',
+      );
+    }
 
     try {
-      final DocumentReference<Map<String, dynamic>> documento =
-          _firestore.collection('publicaciones').doc();
+      final DocumentReference<Map<String, dynamic>> documento = _firestore
+          .collection('publicaciones')
+          .doc();
 
       await documento.set(<String, dynamic>{
         'id': documento.id,
         'uid': usuario.uid,
         'imagenUrl': imagenUrl,
         'imagenPublicId': imagenPublicId,
-        'descripcion':
-            (descripcion == null || descripcion.trim().isEmpty)
-                ? null
-                : descripcion.trim(),
+        'descripcion': (descripcion == null || descripcion.trim().isEmpty)
+            ? null
+            : descripcion.trim(),
+        'ubicacion': ubicacionLimpia,
+        'ubicacionTerminos': terminosDeUbicacion(ubicacionLimpia),
         'fechaCreacion': Timestamp.now(),
         'editado': false,
         'fechaEdicion': null,
@@ -390,7 +517,8 @@ class PublicacionService {
   }
 
   /// Edita la publicación [publicacionId] del usuario autenticado: cambia la
-  /// descripción y/o reemplaza la foto por [nuevaImagen].
+  /// descripción, la ubicación ([ubicacion] `null` la deja igual; vacía la
+  /// quita) y/o reemplaza la foto por [nuevaImagen].
   ///
   /// Lee el documento actual del servidor para validar que exista y que el
   /// usuario sea su autor (ver [validarEdicion]); las reglas de Firestore
@@ -403,19 +531,22 @@ class PublicacionService {
   Future<Publicacion> editarPublicacion({
     required String publicacionId,
     String? descripcion,
+    String? ubicacion,
     ArchivoLocal? nuevaImagen,
   }) async {
-    final DocumentReference<Map<String, dynamic>> documento =
-        _firestore.collection('publicaciones').doc(publicacionId);
+    final DocumentReference<Map<String, dynamic>> documento = _firestore
+        .collection('publicaciones')
+        .doc(publicacionId);
 
     final EdicionPublicacion edicion;
     try {
-      final DocumentSnapshot<Map<String, dynamic>> snapshot =
-          await documento.get();
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await documento
+          .get();
       edicion = validarEdicion(
         actual: snapshot.exists ? Publicacion.fromFirestore(snapshot) : null,
         uidUsuario: _auth.currentUser?.uid,
         descripcion: descripcion,
+        ubicacion: ubicacion,
         nuevaImagen: nuevaImagen,
       );
     } on FirebaseException catch (error) {
@@ -429,13 +560,17 @@ class PublicacionService {
       return edicion.actual;
     }
 
-    final CloudinarySubida? subida =
-        nuevaImagen == null ? null : await subirImagen(nuevaImagen);
+    final CloudinarySubida? subida = nuevaImagen == null
+        ? null
+        : await subirImagen(nuevaImagen);
     final Timestamp fechaEdicion = Timestamp.now();
 
     try {
       await documento.update(<String, dynamic>{
         if (edicion.cambiaDescripcion) 'descripcion': edicion.descripcion,
+        if (edicion.cambiaUbicacion) 'ubicacion': edicion.ubicacion,
+        if (edicion.cambiaUbicacion)
+          'ubicacionTerminos': terminosDeUbicacion(edicion.ubicacion),
         if (subida != null) 'imagenUrl': subida.secureUrl,
         if (subida != null) 'imagenPublicId': subida.publicId,
         'editado': true,
@@ -452,6 +587,7 @@ class PublicacionService {
       imagenUrl: subida?.secureUrl,
       imagenPublicId: subida?.publicId,
       descripcion: () => edicion.descripcion,
+      ubicacion: () => edicion.ubicacion,
       editado: true,
       fechaEdicion: fechaEdicion.toDate(),
     );
@@ -468,12 +604,13 @@ class PublicacionService {
   /// Igual que al editar, la foto no se borra de Cloudinary (borrar exige la
   /// API secret, que no puede vivir en la app): solo deja de referenciarse.
   Future<void> eliminarPublicacion(String publicacionId) async {
-    final DocumentReference<Map<String, dynamic>> documento =
-        _firestore.collection('publicaciones').doc(publicacionId);
+    final DocumentReference<Map<String, dynamic>> documento = _firestore
+        .collection('publicaciones')
+        .doc(publicacionId);
 
     try {
-      final DocumentSnapshot<Map<String, dynamic>> snapshot =
-          await documento.get();
+      final DocumentSnapshot<Map<String, dynamic>> snapshot = await documento
+          .get();
       validarAutoria(
         actual: snapshot.exists ? Publicacion.fromFirestore(snapshot) : null,
         uidUsuario: _auth.currentUser?.uid,
@@ -491,6 +628,9 @@ class PublicacionService {
   /// Cantidad de publicaciones por página del feed.
   static const int tamanoPaginaFeed = 10;
 
+  /// Máximo de publicaciones que trae una búsqueda por ubicación.
+  static const int limiteBusquedaUbicacion = 100;
+
   /// Consulta el feed: publicaciones de todos los usuarios (incluidas las
   /// propias), de la más reciente a la más antigua, de [limite] en [limite].
   /// Para la página siguiente se pasa el [PaginaFeed.cursor] de la anterior.
@@ -500,10 +640,20 @@ class PublicacionService {
   /// "me gusta". Si el perfil de un autor no se puede leer, se muestra como
   /// "Usuario" sin rol; si no se pueden contar los "me gusta", se muestran
   /// en 0. Solo falla si no se pueden leer las publicaciones.
+  ///
+  /// Con [ubicacion] solo trae las publicaciones de esa ubicación (ver
+  /// [coincideUbicacion]), hasta [limiteBusquedaUbicacion], en una sola
+  /// página.
   Future<PaginaFeed> obtenerFeed({
     DocumentSnapshot<Map<String, dynamic>>? despuesDe,
     int limite = tamanoPaginaFeed,
+    String? ubicacion,
   }) async {
+    final List<String> palabrasFiltro = palabrasDeBusqueda(ubicacion);
+    if (palabrasFiltro.isNotEmpty) {
+      return _buscarPorUbicacion(ubicacion!, palabrasFiltro);
+    }
+
     final QuerySnapshot<Map<String, dynamic>> snapshot;
     try {
       Query<Map<String, dynamic>> consulta = _firestore
@@ -522,14 +672,66 @@ class PublicacionService {
       );
     }
 
+    return PaginaFeed(
+      publicaciones: await _enFeed(
+        snapshot.docs.map(Publicacion.fromFirestore).toList(),
+      ),
+      cursor: snapshot.docs.isEmpty ? despuesDe : snapshot.docs.last,
+      hayMas: snapshot.docs.length == limite,
+    );
+  }
+
+  /// Busca con `array-contains` la palabra más larga del filtro en
+  /// `ubicacionTerminos` y revisa el resto en la app. Se ordena por fecha en
+  /// la app para no necesitar un índice compuesto en Firestore.
+  Future<PaginaFeed> _buscarPorUbicacion(
+    String filtro,
+    List<String> palabrasFiltro,
+  ) async {
+    final String termino = palabrasFiltro.reduce(
+      (String a, String b) => b.length > a.length ? b : a,
+    );
+    final QuerySnapshot<Map<String, dynamic>> snapshot;
+    try {
+      snapshot = await _firestore
+          .collection('publicaciones')
+          .where('ubicacionTerminos', arrayContains: termino)
+          .limit(limiteBusquedaUbicacion)
+          .get();
+    } on FirebaseException catch (error) {
+      throw PublicacionServiceException(
+        _mensajeParaErrorDeFirestore(error.code),
+        code: error.code,
+      );
+    }
+
     final List<Publicacion> publicaciones =
-        snapshot.docs.map(Publicacion.fromFirestore).toList();
+        snapshot.docs
+            .map(Publicacion.fromFirestore)
+            .where((Publicacion p) => coincideUbicacion(p.ubicacion, filtro))
+            .toList()
+          ..sort(
+            (Publicacion a, Publicacion b) =>
+                b.fechaCreacion.compareTo(a.fechaCreacion),
+          );
+
+    return PaginaFeed(
+      publicaciones: await _enFeed(publicaciones),
+      cursor: null,
+      hayMas: false,
+    );
+  }
+
+  /// Agrega a cada publicación su autor y sus "me gusta".
+  Future<List<PublicacionEnFeed>> _enFeed(
+    List<Publicacion> publicaciones,
+  ) async {
     final String? uidActual = _auth.currentUser?.uid;
 
     final Map<String, AutorPublicacion> autores = await _autores(
       publicaciones.map((Publicacion p) => p.uid).toSet(),
     );
-    final List<PublicacionEnFeed> items = await Future.wait(
+    return Future.wait(
       publicaciones.map((Publicacion publicacion) async {
         final (int total, bool meGusta) = await _meGustaDe(
           publicacion.id,
@@ -537,18 +739,13 @@ class PublicacionService {
         );
         return PublicacionEnFeed(
           publicacion: publicacion,
-          autor: autores[publicacion.uid] ??
+          autor:
+              autores[publicacion.uid] ??
               AutorPublicacion.desdePerfil(publicacion.uid, null),
           totalMeGusta: total,
           meGusta: meGusta,
         );
       }),
-    );
-
-    return PaginaFeed(
-      publicaciones: items,
-      cursor: snapshot.docs.isEmpty ? despuesDe : snapshot.docs.last,
-      hayMas: snapshot.docs.length == limite,
     );
   }
 
@@ -570,10 +767,12 @@ class PublicacionService {
       );
     }
 
-    final DocumentReference<Map<String, dynamic>> publicacion =
-        _firestore.collection('publicaciones').doc(publicacionId);
-    final DocumentReference<Map<String, dynamic>> like =
-        publicacion.collection('likes').doc(usuario.uid);
+    final DocumentReference<Map<String, dynamic>> publicacion = _firestore
+        .collection('publicaciones')
+        .doc(publicacionId);
+    final DocumentReference<Map<String, dynamic>> like = publicacion
+        .collection('likes')
+        .doc(usuario.uid);
 
     try {
       if (meGusta) {
@@ -590,8 +789,10 @@ class PublicacionService {
       } else {
         await like.delete();
       }
-      final AggregateQuerySnapshot conteo =
-          await publicacion.collection('likes').count().get();
+      final AggregateQuerySnapshot conteo = await publicacion
+          .collection('likes')
+          .count()
+          .get();
       return conteo.count ?? 0;
     } on FirebaseException catch (error) {
       throw PublicacionServiceException(
@@ -615,7 +816,8 @@ class PublicacionService {
       ]);
       final int total =
           (resultados.first! as AggregateQuerySnapshot).count ?? 0;
-      final bool meGusta = uid != null &&
+      final bool meGusta =
+          uid != null &&
           (resultados.last! as DocumentSnapshot<Map<String, dynamic>>).exists;
       return (total, meGusta);
     } on FirebaseException {
@@ -630,8 +832,8 @@ class PublicacionService {
         Map<String, dynamic>? perfil;
         if (uid.isNotEmpty) {
           try {
-            perfil =
-                (await _firestore.collection('usuarios').doc(uid).get()).data();
+            perfil = (await _firestore.collection('usuarios').doc(uid).get())
+                .data();
           } on FirebaseException {
             perfil = null;
           }
@@ -687,12 +889,15 @@ class PublicacionService {
       return false;
     }
 
-    final bool esJpeg = bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF;
-    final bool esPng = bytes[0] == 0x89 &&
+    final bool esJpeg =
+        bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF;
+    final bool esPng =
+        bytes[0] == 0x89 &&
         bytes[1] == 0x50 &&
         bytes[2] == 0x4E &&
         bytes[3] == 0x47;
-    final bool esWebp = bytes[0] == 0x52 &&
+    final bool esWebp =
+        bytes[0] == 0x52 &&
         bytes[1] == 0x49 &&
         bytes[2] == 0x46 &&
         bytes[3] == 0x46 &&

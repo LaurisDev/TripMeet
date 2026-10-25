@@ -77,14 +77,15 @@ class _PublicacionDetalleScreenState extends State<PublicacionDetalleScreen> {
   }
 
   Future<void> _editar() async {
-    final Publicacion? actualizada = await Navigator.of(context).push<Publicacion>(
-      MaterialPageRoute<Publicacion>(
-        builder: (_) => EditarPublicacionScreen(
-          publicacion: _publicacion,
-          service: widget.service,
-        ),
-      ),
-    );
+    final Publicacion? actualizada = await Navigator.of(context)
+        .push<Publicacion>(
+          MaterialPageRoute<Publicacion>(
+            builder: (_) => EditarPublicacionScreen(
+              publicacion: _publicacion,
+              service: widget.service,
+            ),
+          ),
+        );
     if (actualizada == null || !mounted) return;
 
     setState(() => _publicacion = actualizada);
@@ -247,6 +248,28 @@ class _PublicacionDetalleScreenState extends State<PublicacionDetalleScreen> {
                         ],
                       ],
                     ),
+                    if (publicacion.ubicacion != null) ...<Widget>[
+                      const SizedBox(height: FormStyles.s8),
+                      Row(
+                        children: <Widget>[
+                          const Icon(
+                            Icons.place_outlined,
+                            size: 16,
+                            color: AppTheme.verdeAzulado,
+                          ),
+                          const SizedBox(width: FormStyles.s8),
+                          Expanded(
+                            child: Text(
+                              publicacion.ubicacion!,
+                              style: FormStyles.cuerpo(
+                                weight: FontWeight.w600,
+                                color: AppTheme.azulPetroleo,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: FormStyles.s16),
                     Text(
                       publicacion.descripcion ?? 'Sin descripción.',
@@ -286,7 +309,8 @@ class _EtiquetaEditado extends StatelessWidget {
     if (fecha == null) return etiqueta;
 
     return Tooltip(
-      message: 'Editado el ${_formatearFecha(fecha)} a las ${_formatearHora(fecha)}',
+      message:
+          'Editado el ${_formatearFecha(fecha)} a las ${_formatearHora(fecha)}',
       child: etiqueta,
     );
   }
