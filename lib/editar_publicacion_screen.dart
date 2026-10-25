@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
 import 'form_styles.dart';
-import 'guia_service.dart' show ArchivoLocal;
 import 'publicacion_service.dart';
-import 'widgets/archivo_picker.dart';
 import 'widgets/aviso_error.dart';
+import 'widgets/selector_fotos.dart';
 
-/// Pantalla para editar una publicación propia: precarga la foto, la
-/// ubicación y la descripción actuales y permite cambiarlas.
+/// Pantalla para editar una publicación propia: precarga las fotos, la
+/// ubicación y la descripción actuales y permite cambiarlas (agregar,
+/// quitar o cambiar la portada del carrusel).
 ///
 /// Al guardar hace `pop` con la [Publicacion] actualizada; al cancelar hace
 /// `pop` sin resultado y la publicación conserva su contenido original. Si
@@ -41,15 +41,31 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
     text: widget.publicacion.ubicacion ?? '',
   );
 
-  ArchivoLocal? _nuevaImagen;
+  late final List<FotoEdicion> _fotos = <FotoEdicion>[
+    for (final ImagenPublicacion imagen in widget.publicacion.imagenes)
+      FotoPublicada(imagen),
+  ];
   bool _guardando = false;
   String? _error;
 
-  /// La foto es obligatoria (igual que al crear), así que solo cuenta como
-  /// cambio reemplazarla; la descripción se compara ya normalizada para que
+  /// Progreso de la subida de fotos nuevas: (subidas, total).
+  (int, int)? _progreso;
+
+  /// `true` si se agregó, quitó o reordenó alguna foto.
+  bool get _cambianFotos {
+    final List<ImagenPublicacion> originales = widget.publicacion.imagenes;
+    if (_fotos.length != originales.length) return true;
+    for (int i = 0; i < _fotos.length; i++) {
+      final FotoEdicion foto = _fotos[i];
+      if (foto is! FotoPublicada || foto.imagen != originales[i]) return true;
+    }
+    return false;
+  }
+
+  /// La descripción y la ubicación se comparan ya normalizadas para que
   /// agregar espacios no cuente como edición.
   bool get _hayCambios =>
-      _nuevaImagen != null ||
+      _cambianFotos ||
       PublicacionService.normalizarDescripcion(_descripcionController.text) !=
           widget.publicacion.descripcion ||
       PublicacionService.normalizarUbicacion(_ubicacionController.text) !=
@@ -69,28 +85,16 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
     super.dispose();
   }
 
-  Future<void> _seleccionarImagen() async {
+  Future<void> _agregarFotos() async {
     setState(() => _error = null);
-
-    try {
-      final List<ArchivoLocal> seleccionados = await seleccionarArchivos(
-        extensiones: extensionesImagenPermitidas,
-      );
-      if (seleccionados.isEmpty) {
-        return;
-      }
-
-      final ArchivoLocal archivo = seleccionados.first;
-      final String? errorImagen = PublicacionService.validarImagen(archivo);
-      if (errorImagen != null) {
-        setState(() => _error = errorImagen);
-        return;
-      }
-
-      setState(() => _nuevaImagen = archivo);
-    } on SeleccionArchivoException catch (error) {
-      setState(() => _error = error.message);
-    }
+    final (List<FotoNueva> nuevas, String? aviso) = await elegirFotosNuevas(
+      disponibles: maximoFotosPublicacion - _fotos.length,
+    );
+    if (!mounted) return;
+    setState(() {
+      _fotos.addAll(nuevas);
+      _error = aviso;
+    });
   }
 
   Future<void> _guardar() async {
@@ -104,7 +108,10 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
         publicacionId: widget.publicacion.id,
         descripcion: _descripcionController.text,
         ubicacion: _ubicacionController.text,
-        nuevaImagen: _nuevaImagen,
+        imagenes: _cambianFotos ? List<FotoEdicion>.of(_fotos) : null,
+        onProgreso: (int subidas, int total) {
+          if (mounted) setState(() => _progreso = (subidas, total));
+        },
       );
       if (!mounted) return;
       // `pop` (a diferencia de `maybePop`) no consulta el PopScope, así que
@@ -115,6 +122,7 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
         setState(() {
           _error = error.message;
           _guardando = false;
+          _progreso = null;
         });
       }
     }
@@ -168,12 +176,24 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
           child: ListView(
             padding: const EdgeInsets.all(FormStyles.s20),
             children: <Widget>[
-              _FotoEditable(
-                imagenUrlActual: widget.publicacion.imagenUrl,
-                nuevaImagen: _nuevaImagen,
+              SelectorFotos(
+                fotos: _fotos,
                 habilitado: !_guardando,
-                onCambiar: _seleccionarImagen,
-                onDeshacer: () => setState(() => _nuevaImagen = null),
+                onAgregar: _agregarFotos,
+                onQuitar: (int index) {
+                  // La publicación debe conservar al menos una foto.
+                  if (_fotos.length == 1) {
+                    setState(
+                      () => _error =
+                          'La publicación debe tener al menos una foto. '
+                          'Agrega otra antes de quitar esta.',
+                    );
+                    return;
+                  }
+                  setState(() => _fotos.removeAt(index));
+                },
+                onHacerPortada: (int index) =>
+                    setState(() => _fotos.insert(0, _fotos.removeAt(index))),
               ),
               const SizedBox(height: FormStyles.s20),
               TextField(
@@ -213,13 +233,24 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
                 style: FormStyles.botonPrimario(),
                 onPressed: (!hayCambios || _guardando) ? null : _guardar,
                 child: _guardando
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ),
+                          if (_progreso
+                              case (final int subidas, final int total)
+                              when total > 1) ...<Widget>[
+                            const SizedBox(width: FormStyles.s12),
+                            Text('Subiendo $subidas de $total...'),
+                          ],
+                        ],
                       )
                     : const Text('Guardar cambios'),
               ),
@@ -230,122 +261,6 @@ class _EditarPublicacionScreenState extends State<EditarPublicacionScreen> {
                     ? null
                     : () => Navigator.of(context).maybePop(),
                 child: const Text('Cancelar'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Vista previa de la foto de la publicación: la actual (desde Cloudinary) o
-/// la nueva elegida (desde memoria), con acciones para cambiarla o volver a
-/// la original.
-class _FotoEditable extends StatelessWidget {
-  const _FotoEditable({
-    required this.imagenUrlActual,
-    required this.nuevaImagen,
-    required this.habilitado,
-    required this.onCambiar,
-    required this.onDeshacer,
-  });
-
-  final String imagenUrlActual;
-  final ArchivoLocal? nuevaImagen;
-  final bool habilitado;
-  final VoidCallback onCambiar;
-  final VoidCallback onDeshacer;
-
-  @override
-  Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 1,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(FormStyles.radioTarjeta),
-          border: Border.all(color: FormStyles.colorBorde),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          fit: StackFit.expand,
-          children: <Widget>[
-            if (nuevaImagen != null)
-              Image.memory(nuevaImagen!.bytes, fit: BoxFit.cover)
-            else
-              Image.network(
-                imagenUrlActual,
-                fit: BoxFit.cover,
-                errorBuilder:
-                    (
-                      BuildContext context,
-                      Object error,
-                      StackTrace? stackTrace,
-                    ) => Icon(
-                      Icons.broken_image_outlined,
-                      size: 48,
-                      color: AppTheme.textoSuave.withValues(alpha: 0.4),
-                    ),
-              ),
-            Positioned(
-              right: FormStyles.s8,
-              bottom: FormStyles.s8,
-              child: _AccionFoto(
-                icono: Icons.autorenew_rounded,
-                texto: 'Cambiar foto',
-                onTap: habilitado ? onCambiar : null,
-              ),
-            ),
-            if (nuevaImagen != null)
-              Positioned(
-                left: FormStyles.s8,
-                bottom: FormStyles.s8,
-                child: _AccionFoto(
-                  icono: Icons.undo_rounded,
-                  texto: 'Usar la original',
-                  onTap: habilitado ? onDeshacer : null,
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AccionFoto extends StatelessWidget {
-  const _AccionFoto({
-    required this.icono,
-    required this.texto,
-    required this.onTap,
-  });
-
-  final IconData icono;
-  final String texto;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black.withValues(alpha: 0.55),
-      borderRadius: BorderRadius.circular(FormStyles.radioPill),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(FormStyles.radioPill),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: FormStyles.s12,
-            vertical: FormStyles.s8,
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(icono, size: 16, color: Colors.white),
-              const SizedBox(width: FormStyles.s4),
-              Text(
-                texto,
-                style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
             ],
           ),

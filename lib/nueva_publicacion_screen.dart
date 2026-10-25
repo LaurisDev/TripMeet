@@ -1,17 +1,15 @@
 import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
-import 'cloudinary_service.dart' show CloudinarySubida;
 import 'form_styles.dart';
-import 'guia_service.dart' show ArchivoLocal;
 import 'publicacion_service.dart';
-import 'widgets/archivo_picker.dart';
 import 'widgets/aviso_error.dart';
-import 'widgets/foto_seleccionada.dart';
+import 'widgets/selector_fotos.dart';
 
-/// Pantalla para crear una publicación: elegir foto (obligatoria), indicar
-/// dónde fue (opcional), escribir una descripción (opcional) y publicar. Se abre desde el Perfil del
-/// turista.
+/// Pantalla para crear una publicación: elegir una o varias fotos (al menos
+/// una; con varias se ven como carrusel), indicar dónde fue (opcional),
+/// escribir una descripción (opcional) y publicar. Se abre desde el Perfil
+/// del turista y desde el feed.
 class NuevaPublicacionScreen extends StatefulWidget {
   const NuevaPublicacionScreen({super.key});
 
@@ -24,9 +22,12 @@ class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
   final TextEditingController _descripcionController = TextEditingController();
   final TextEditingController _ubicacionController = TextEditingController();
 
-  ArchivoLocal? _imagen;
+  final List<FotoEdicion> _fotos = <FotoEdicion>[];
   bool _publicando = false;
   String? _error;
+
+  /// Progreso de la subida: (fotos subidas, total).
+  (int, int)? _progreso;
 
   @override
   void dispose() {
@@ -35,33 +36,20 @@ class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
     super.dispose();
   }
 
-  Future<void> _seleccionarImagen() async {
+  Future<void> _agregarFotos() async {
     setState(() => _error = null);
-
-    try {
-      final List<ArchivoLocal> seleccionados = await seleccionarArchivos(
-        extensiones: extensionesImagenPermitidas,
-      );
-      if (seleccionados.isEmpty) {
-        return;
-      }
-
-      final ArchivoLocal archivo = seleccionados.first;
-      final String? errorImagen = PublicacionService.validarImagen(archivo);
-      if (errorImagen != null) {
-        setState(() => _error = errorImagen);
-        return;
-      }
-
-      setState(() => _imagen = archivo);
-    } on SeleccionArchivoException catch (error) {
-      setState(() => _error = error.message);
-    }
+    final (List<FotoNueva> nuevas, String? aviso) = await elegirFotosNuevas(
+      disponibles: maximoFotosPublicacion - _fotos.length,
+    );
+    if (!mounted) return;
+    setState(() {
+      _fotos.addAll(nuevas);
+      _error = aviso;
+    });
   }
 
   Future<void> _publicar() async {
-    final ArchivoLocal? imagen = _imagen;
-    if (imagen == null) return;
+    if (_fotos.isEmpty) return;
 
     setState(() {
       _publicando = true;
@@ -69,10 +57,14 @@ class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
     });
 
     try {
-      final CloudinarySubida subida = await _service.subirImagen(imagen);
+      final List<ImagenPublicacion> imagenes = await _service.subirImagenes(
+        _fotos,
+        onProgreso: (int subidas, int total) {
+          if (mounted) setState(() => _progreso = (subidas, total));
+        },
+      );
       await _service.crearPublicacion(
-        imagenUrl: subida.secureUrl,
-        imagenPublicId: subida.publicId,
+        imagenes: imagenes,
         descripcion: _descripcionController.text,
         ubicacion: _ubicacionController.text,
       );
@@ -81,12 +73,19 @@ class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
     } on PublicacionServiceException catch (error) {
       setState(() => _error = error.message);
     } finally {
-      if (mounted) setState(() => _publicando = false);
+      if (mounted) {
+        setState(() {
+          _publicando = false;
+          _progreso = null;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final (int, int)? progreso = _progreso;
+
     return Scaffold(
       backgroundColor: AppTheme.crema,
       appBar: AppBar(title: const Text('Nueva publicación')),
@@ -94,10 +93,13 @@ class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
         child: ListView(
           padding: const EdgeInsets.all(FormStyles.s20),
           children: <Widget>[
-            FotoSeleccionada(
-              imagen: _imagen,
+            SelectorFotos(
+              fotos: _fotos,
               habilitado: !_publicando,
-              onTap: _seleccionarImagen,
+              onAgregar: _agregarFotos,
+              onQuitar: (int index) => setState(() => _fotos.removeAt(index)),
+              onHacerPortada: (int index) =>
+                  setState(() => _fotos.insert(0, _fotos.removeAt(index))),
             ),
             const SizedBox(height: FormStyles.s20),
             TextField(
@@ -134,17 +136,30 @@ class _NuevaPublicacionScreenState extends State<NuevaPublicacionScreen> {
             ],
             FilledButton(
               style: FormStyles.botonPrimario(),
-              onPressed: (_imagen == null || _publicando) ? null : _publicar,
+              onPressed: (_fotos.isEmpty || _publicando) ? null : _publicar,
               child: _publicando
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        ),
+                        if (progreso != null && progreso.$2 > 1) ...<Widget>[
+                          const SizedBox(width: FormStyles.s12),
+                          Text('Subiendo ${progreso.$1} de ${progreso.$2}...'),
+                        ],
+                      ],
                     )
-                  : const Text('Publicar'),
+                  : Text(
+                      _fotos.length > 1
+                          ? 'Publicar ${_fotos.length} fotos'
+                          : 'Publicar',
+                    ),
             ),
           ],
         ),

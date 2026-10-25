@@ -1443,12 +1443,31 @@ class _MiniaturaPublicacion extends StatelessWidget {
             ),
           );
         },
-        child: Hero(
-          tag: 'publicacion-${publicacion.id}',
-          child: ImagenRemota(
-            url: publicacion.imagenUrl,
-            fondo: AppTheme.crema,
-          ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            Hero(
+              tag: 'publicacion-${publicacion.id}',
+              child: ImagenRemota(
+                url: publicacion.imagenUrl,
+                fondo: AppTheme.crema,
+              ),
+            ),
+            // Varias fotos: ícono de carrusel, como en otras redes.
+            if (publicacion.masImagenes.isNotEmpty)
+              const Positioned(
+                top: 6,
+                right: 6,
+                child: Icon(
+                  Icons.collections_rounded,
+                  size: 18,
+                  color: Colors.white,
+                  shadows: <Shadow>[
+                    Shadow(color: Colors.black54, blurRadius: 4),
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
     );

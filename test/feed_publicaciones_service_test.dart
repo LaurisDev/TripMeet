@@ -320,8 +320,12 @@ void main() {
 
     test('crear guarda la ubicación y sus términos de búsqueda', () async {
       await servicio().crearPublicacion(
-        imagenUrl: 'https://res.cloudinary.com/demo/u.jpg',
-        imagenPublicId: 'tripmeet/publicaciones/u',
+        imagenes: <ImagenPublicacion>[
+          ImagenPublicacion(
+            url: 'https://res.cloudinary.com/demo/u.jpg',
+            publicId: 'tripmeet/publicaciones/u',
+          ),
+        ],
         ubicacion: ' Guatapé, Antioquia ',
       );
 
@@ -338,8 +342,12 @@ void main() {
     test('rechaza una ubicación demasiado larga', () {
       expect(
         servicio().crearPublicacion(
-          imagenUrl: 'https://res.cloudinary.com/demo/u.jpg',
-          imagenPublicId: 'tripmeet/publicaciones/u',
+          imagenes: <ImagenPublicacion>[
+            ImagenPublicacion(
+              url: 'https://res.cloudinary.com/demo/u.jpg',
+              publicId: 'tripmeet/publicaciones/u',
+            ),
+          ],
           ubicacion: 'a' * (PublicacionService.largoMaximoUbicacion + 1),
         ),
         lanzaCodigo('ubicacion-invalida'),
@@ -356,8 +364,12 @@ void main() {
           ('Cartagena, Bolívar', 2),
         ]) {
           await s.crearPublicacion(
-            imagenUrl: 'https://res.cloudinary.com/demo/$dia.jpg',
-            imagenPublicId: 'tripmeet/publicaciones/$dia',
+            imagenes: <ImagenPublicacion>[
+              ImagenPublicacion(
+                url: 'https://res.cloudinary.com/demo/$dia.jpg',
+                publicId: 'tripmeet/publicaciones/$dia',
+              ),
+            ],
             ubicacion: ubicacion,
           );
           final QueryDocumentSnapshot<Map<String, dynamic>> ultimo =
@@ -403,8 +415,12 @@ void main() {
     test('editar cambia o quita la ubicación y sus términos', () async {
       final PublicacionService s = servicio();
       await s.crearPublicacion(
-        imagenUrl: 'https://res.cloudinary.com/demo/e.jpg',
-        imagenPublicId: 'tripmeet/publicaciones/e',
+        imagenes: <ImagenPublicacion>[
+          ImagenPublicacion(
+            url: 'https://res.cloudinary.com/demo/e.jpg',
+            publicId: 'tripmeet/publicaciones/e',
+          ),
+        ],
         ubicacion: 'Medellín',
       );
       final String id =
@@ -429,6 +445,105 @@ void main() {
         ubicacion: '',
       );
       expect(sinUbicacion.ubicacion, isNull);
+    });
+  });
+
+  group('carrusel de fotos', () {
+    const List<ImagenPublicacion> tres = <ImagenPublicacion>[
+      ImagenPublicacion(url: 'https://x/1.jpg', publicId: 'p/1'),
+      ImagenPublicacion(url: 'https://x/2.jpg', publicId: 'p/2'),
+      ImagenPublicacion(url: 'https://x/3.jpg', publicId: 'p/3'),
+    ];
+
+    Future<Publicacion> leer() async => Publicacion.fromFirestore(
+      (await firestore.collection('publicaciones').get()).docs.single,
+    );
+
+    test('crear guarda todas las fotos y la primera como portada', () async {
+      await servicio().crearPublicacion(imagenes: tres);
+
+      final Map<String, dynamic> datos =
+          (await firestore.collection('publicaciones').get()).docs.single
+              .data();
+      expect(datos['imagenUrl'], 'https://x/1.jpg');
+      expect(datos['imagenes'], hasLength(3));
+
+      final Publicacion publicacion = await leer();
+      expect(publicacion.imagenes, tres);
+      expect(publicacion.masImagenes, tres.sublist(1));
+    });
+
+    test(
+      'una publicación de antes del carrusel se lee con una sola foto',
+      () async {
+        await publicar('vieja', 'yo', DateTime(2026, 9, 1));
+
+        final Publicacion publicacion = await leer();
+        expect(publicacion.imagenes, hasLength(1));
+        expect(publicacion.imagenes.single.url, publicacion.imagenUrl);
+      },
+    );
+
+    test('rechaza crear sin fotos o con más del máximo', () {
+      expect(
+        servicio().crearPublicacion(imagenes: const <ImagenPublicacion>[]),
+        lanzaCodigo('cantidad-fotos-invalida'),
+      );
+      expect(
+        servicio().crearPublicacion(
+          imagenes: List<ImagenPublicacion>.filled(
+            maximoFotosPublicacion + 1,
+            tres.first,
+          ),
+        ),
+        lanzaCodigo('cantidad-fotos-invalida'),
+      );
+    });
+
+    test('editar quita y reordena fotos y cambia la portada', () async {
+      final PublicacionService s = servicio();
+      await s.crearPublicacion(imagenes: tres);
+      final Publicacion original = await leer();
+
+      final Publicacion editada = await s.editarPublicacion(
+        publicacionId: original.id,
+        imagenes: <FotoEdicion>[FotoPublicada(tres[2]), FotoPublicada(tres[0])],
+      );
+
+      expect(editada.imagenes, <ImagenPublicacion>[tres[2], tres[0]]);
+      expect(editada.editado, isTrue);
+      final Publicacion guardada = await leer();
+      expect(guardada.imagenUrl, 'https://x/3.jpg');
+      expect(guardada.imagenes, editada.imagenes);
+    });
+
+    test('las mismas fotos en el mismo orden no cuentan como cambio', () async {
+      final PublicacionService s = servicio();
+      await s.crearPublicacion(imagenes: tres);
+      final Publicacion original = await leer();
+
+      final Publicacion resultado = await s.editarPublicacion(
+        publicacionId: original.id,
+        descripcion: null,
+        imagenes: <FotoEdicion>[
+          for (final ImagenPublicacion i in tres) FotoPublicada(i),
+        ],
+      );
+      expect(resultado.editado, isFalse);
+    });
+
+    test('editar no permite dejar la publicación sin fotos', () async {
+      final PublicacionService s = servicio();
+      await s.crearPublicacion(imagenes: tres);
+      final Publicacion original = await leer();
+
+      expect(
+        s.editarPublicacion(
+          publicacionId: original.id,
+          imagenes: const <FotoEdicion>[],
+        ),
+        lanzaCodigo('cantidad-fotos-invalida'),
+      );
     });
   });
 }

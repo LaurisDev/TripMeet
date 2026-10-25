@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:tripmeet/guia_service.dart' show ArchivoLocal;
 import 'package:tripmeet/publicacion_detalle_screen.dart';
 import 'package:tripmeet/publicacion_service.dart';
 
@@ -30,7 +29,8 @@ class _ServicioFalso extends Fake implements PublicacionService {
     required String publicacionId,
     String? descripcion,
     String? ubicacion,
-    ArchivoLocal? nuevaImagen,
+    List<FotoEdicion>? imagenes,
+    void Function(int subidas, int total)? onProgreso,
   }) async {
     llamadas++;
     if (error != null) throw error!;
@@ -40,7 +40,7 @@ class _ServicioFalso extends Fake implements PublicacionService {
       uidUsuario: uidUsuario,
       descripcion: descripcion,
       ubicacion: ubicacion,
-      nuevaImagen: nuevaImagen,
+      imagenes: imagenes,
     );
     return edicion.actual.copyWith(
       descripcion: () => edicion.descripcion,

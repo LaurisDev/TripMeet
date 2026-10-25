@@ -71,12 +71,13 @@ void main() {
         actual: _publicacion(),
         uidUsuario: 'autor-123',
         descripcion: 'Atardecer en Cartagena',
-        nuevaImagen: _png(),
+        imagenes: <FotoEdicion>[FotoNueva(_png())],
       );
 
       expect(edicion.hayCambios, isTrue);
       expect(edicion.cambiaDescripcion, isFalse);
-      expect(edicion.nuevaImagen, isNotNull);
+      expect(edicion.cambiaImagenes, isTrue);
+      expect(edicion.imagenes, hasLength(1));
     });
 
     test('sin cambios reales (solo espacios) no se marca como editada', () {
@@ -138,11 +139,15 @@ void main() {
           actual: _publicacion(),
           uidUsuario: 'autor-123',
           descripcion: 'Texto',
-          nuevaImagen: ArchivoLocal(
-            nombre: 'falsa.png',
-            bytes: Uint8List(64),
-            extension: 'png',
-          ),
+          imagenes: <FotoEdicion>[
+            FotoNueva(
+              ArchivoLocal(
+                nombre: 'falsa.png',
+                bytes: Uint8List(64),
+                extension: 'png',
+              ),
+            ),
+          ],
         ),
         _lanzaCodigo('imagen-invalida'),
       );

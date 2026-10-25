@@ -17,8 +17,66 @@ const List<String> extensionesImagenPermitidas = <String>[
 /// Tamaño máximo permitido para la foto de una publicación (5 MB).
 const int tamanoMaximoImagenBytes = 5 * 1024 * 1024;
 
-/// Publicación de un turista: una foto con descripción opcional, visible en
-/// su propio perfil.
+/// Máximo de fotos en una publicación (carrusel).
+const int maximoFotosPublicacion = 10;
+
+/// Una foto de una publicación, ya subida a Cloudinary.
+class ImagenPublicacion {
+  const ImagenPublicacion({required this.url, required this.publicId});
+
+  final String url;
+  final String publicId;
+
+  Map<String, dynamic> toMap() => <String, dynamic>{
+    'url': url,
+    'publicId': publicId,
+  };
+
+  /// Lee una foto de la lista `imagenes`; `null` si el dato no es válido.
+  static ImagenPublicacion? desdeMapa(dynamic datos) {
+    if (datos is! Map) return null;
+    final dynamic url = datos['url'];
+    if (url is! String || url.isEmpty) return null;
+    final dynamic publicId = datos['publicId'];
+    return ImagenPublicacion(
+      url: url,
+      publicId: publicId is String ? publicId : '',
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ImagenPublicacion &&
+      other.url == url &&
+      other.publicId == publicId;
+
+  @override
+  int get hashCode => Object.hash(url, publicId);
+}
+
+/// Una foto en el formulario de una publicación: una que ya estaba publicada
+/// ([FotoPublicada]) o una recién elegida del dispositivo ([FotoNueva]).
+sealed class FotoEdicion {
+  const FotoEdicion();
+}
+
+class FotoPublicada extends FotoEdicion {
+  const FotoPublicada(this.imagen);
+
+  final ImagenPublicacion imagen;
+}
+
+class FotoNueva extends FotoEdicion {
+  const FotoNueva(this.archivo);
+
+  final ArchivoLocal archivo;
+}
+
+/// Publicación de un turista: una o varias fotos (carrusel) con descripción
+/// y ubicación opcionales.
+///
+/// [imagenUrl] e [imagenPublicId] son la primera foto (la portada, que se
+/// muestra en la grilla del perfil); [masImagenes], las demás.
 class Publicacion {
   const Publicacion({
     required this.id,
@@ -26,6 +84,7 @@ class Publicacion {
     required this.imagenUrl,
     required this.imagenPublicId,
     required this.fechaCreacion,
+    this.masImagenes = const <ImagenPublicacion>[],
     this.descripcion,
     this.ubicacion,
     this.editado = false,
@@ -36,6 +95,16 @@ class Publicacion {
   final String uid;
   final String imagenUrl;
   final String imagenPublicId;
+
+  /// Fotos del carrusel después de la portada.
+  final List<ImagenPublicacion> masImagenes;
+
+  /// Todas las fotos, empezando por la portada.
+  List<ImagenPublicacion> get imagenes => <ImagenPublicacion>[
+    ImagenPublicacion(url: imagenUrl, publicId: imagenPublicId),
+    ...masImagenes,
+  ];
+
   final String? descripcion;
 
   /// Dónde se tomaron las fotos o dónde estuvo el autor (por ejemplo,
@@ -54,12 +123,25 @@ class Publicacion {
   ) {
     final Map<String, dynamic> datos = documento.data() ?? <String, dynamic>{};
     final String? descripcion = datos['descripcion'] as String?;
+    // Las publicaciones de antes del carrusel solo tienen `imagenUrl`.
+    final dynamic lista = datos['imagenes'];
+    final List<ImagenPublicacion> imagenes = <ImagenPublicacion>[
+      if (lista is List)
+        for (final dynamic item in lista)
+          if (ImagenPublicacion.desdeMapa(item) case final ImagenPublicacion i)
+            i,
+    ];
 
     return Publicacion(
       id: documento.id,
       uid: datos['uid'] as String? ?? '',
-      imagenUrl: datos['imagenUrl'] as String? ?? '',
-      imagenPublicId: datos['imagenPublicId'] as String? ?? '',
+      imagenUrl: imagenes.isNotEmpty
+          ? imagenes.first.url
+          : datos['imagenUrl'] as String? ?? '',
+      imagenPublicId: imagenes.isNotEmpty
+          ? imagenes.first.publicId
+          : datos['imagenPublicId'] as String? ?? '',
+      masImagenes: imagenes.skip(1).toList(),
       descripcion: (descripcion == null || descripcion.trim().isEmpty)
           ? null
           : descripcion,
@@ -78,9 +160,9 @@ class Publicacion {
   /// Copia con los campos editables reemplazados. [descripcion] y
   /// [ubicacion] son funciones para poder distinguir "no cambiar" de "dejar
   /// en `null`".
+  /// [imagenes], si se pasa, no puede estar vacía.
   Publicacion copyWith({
-    String? imagenUrl,
-    String? imagenPublicId,
+    List<ImagenPublicacion>? imagenes,
     String? Function()? descripcion,
     String? Function()? ubicacion,
     bool? editado,
@@ -89,8 +171,9 @@ class Publicacion {
     return Publicacion(
       id: id,
       uid: uid,
-      imagenUrl: imagenUrl ?? this.imagenUrl,
-      imagenPublicId: imagenPublicId ?? this.imagenPublicId,
+      imagenUrl: imagenes?.first.url ?? imagenUrl,
+      imagenPublicId: imagenes?.first.publicId ?? imagenPublicId,
+      masImagenes: imagenes?.skip(1).toList() ?? masImagenes,
       descripcion: descripcion != null ? descripcion() : this.descripcion,
       ubicacion: ubicacion != null ? ubicacion() : this.ubicacion,
       fechaCreacion: fechaCreacion,
@@ -109,7 +192,8 @@ class EdicionPublicacion {
     this.descripcion,
     this.cambiaUbicacion = false,
     this.ubicacion,
-    this.nuevaImagen,
+    this.cambiaImagenes = false,
+    this.imagenes,
   });
 
   final Publicacion actual;
@@ -121,10 +205,14 @@ class EdicionPublicacion {
 
   /// Ubicación normalizada (sin espacios sobrantes; `null` si quedó vacía).
   final String? ubicacion;
-  final ArchivoLocal? nuevaImagen;
 
-  bool get hayCambios =>
-      cambiaDescripcion || cambiaUbicacion || nuevaImagen != null;
+  /// `true` si se agregaron, quitaron o reordenaron fotos.
+  final bool cambiaImagenes;
+
+  /// Fotos finales del carrusel, en orden; `null` si no cambian.
+  final List<FotoEdicion>? imagenes;
+
+  bool get hayCambios => cambiaDescripcion || cambiaUbicacion || cambiaImagenes;
 }
 
 /// Autor de una publicación tal como se muestra en el feed, calculado desde
@@ -391,10 +479,23 @@ class PublicacionService {
     return actual;
   }
 
+  /// Mensaje de error si [cantidad] fotos no es válido para una publicación
+  /// (al menos una y como máximo [maximoFotosPublicacion]); `null` si sí.
+  static String? validarCantidadFotos(int cantidad) {
+    if (cantidad < 1) return 'Agrega al menos una foto.';
+    if (cantidad > maximoFotosPublicacion) {
+      return 'Puedes subir hasta $maximoFotosPublicacion fotos por '
+          'publicación.';
+    }
+    return null;
+  }
+
   /// Reglas de negocio de la edición, sin tocar Firestore ni Cloudinary:
   ///
   /// - El usuario debe ser el autor (ver [validarAutoria]).
-  /// - [nuevaImagen] debe cumplir las mismas reglas que al crear.
+  /// - [imagenes] (`null` = no tocar las fotos) debe tener entre 1 y
+  ///   [maximoFotosPublicacion] fotos, y las nuevas deben cumplir las mismas
+  ///   reglas que al crear.
   ///
   /// Devuelve qué cambia realmente respecto al contenido original; si nada
   /// cambia, [EdicionPublicacion.hayCambios] es `false` y la publicación no
@@ -404,18 +505,41 @@ class PublicacionService {
     required String? uidUsuario,
     required String? descripcion,
     String? ubicacion,
-    ArchivoLocal? nuevaImagen,
+    List<FotoEdicion>? imagenes,
   }) {
     final Publicacion verificada = validarAutoria(
       actual: actual,
       uidUsuario: uidUsuario,
       accion: 'editar',
     );
-    if (nuevaImagen != null) {
-      final String? errorImagen = validarImagen(nuevaImagen);
-      if (errorImagen != null) {
-        throw PublicacionServiceException(errorImagen, code: 'imagen-invalida');
+
+    bool cambiaImagenes = false;
+    if (imagenes != null) {
+      final String? errorCantidad = validarCantidadFotos(imagenes.length);
+      if (errorCantidad != null) {
+        throw PublicacionServiceException(
+          errorCantidad,
+          code: 'cantidad-fotos-invalida',
+        );
       }
+      for (final FotoEdicion foto in imagenes) {
+        if (foto is FotoNueva) {
+          final String? errorImagen = validarImagen(foto.archivo);
+          if (errorImagen != null) {
+            throw PublicacionServiceException(
+              errorImagen,
+              code: 'imagen-invalida',
+            );
+          }
+        }
+      }
+      final List<ImagenPublicacion> originales = verificada.imagenes;
+      cambiaImagenes =
+          imagenes.length != originales.length ||
+          <int>[for (int i = 0; i < imagenes.length; i++) i].any((int i) {
+            final FotoEdicion foto = imagenes[i];
+            return foto is! FotoPublicada || foto.imagen != originales[i];
+          });
     }
 
     final String? nuevaDescripcion = normalizarDescripcion(descripcion);
@@ -436,7 +560,8 @@ class PublicacionService {
       descripcion: nuevaDescripcion,
       cambiaUbicacion: nuevaUbicacion != verificada.ubicacion,
       ubicacion: nuevaUbicacion,
-      nuevaImagen: nuevaImagen,
+      cambiaImagenes: cambiaImagenes,
+      imagenes: cambiaImagenes ? imagenes : null,
     );
   }
 
@@ -460,11 +585,62 @@ class PublicacionService {
     }
   }
 
-  /// Crea el documento de la publicación en Firestore, ya con la imagen
-  /// subida a Cloudinary.
+  /// Sube a Cloudinary las fotos nuevas de [fotos], una por una y en orden,
+  /// y devuelve todas las fotos ya publicadas. [onProgreso] recibe cuántas
+  /// fotos nuevas van subidas y cuántas son en total.
+  ///
+  /// Valida todas antes de subir la primera, para no dejar fotos sueltas en
+  /// Cloudinary si una no sirve.
+  Future<List<ImagenPublicacion>> subirImagenes(
+    List<FotoEdicion> fotos, {
+    void Function(int subidas, int total)? onProgreso,
+  }) async {
+    final List<ArchivoLocal> nuevas = <ArchivoLocal>[
+      for (final FotoEdicion foto in fotos)
+        if (foto is FotoNueva) foto.archivo,
+    ];
+    for (final ArchivoLocal archivo in nuevas) {
+      final String? errorImagen = validarImagen(archivo);
+      if (errorImagen != null) {
+        throw PublicacionServiceException(errorImagen, code: 'imagen-invalida');
+      }
+    }
+
+    int subidas = 0;
+    onProgreso?.call(subidas, nuevas.length);
+    final List<ImagenPublicacion> resultado = <ImagenPublicacion>[];
+    for (final FotoEdicion foto in fotos) {
+      switch (foto) {
+        case FotoPublicada(:final ImagenPublicacion imagen):
+          resultado.add(imagen);
+        case FotoNueva(:final ArchivoLocal archivo):
+          final CloudinarySubida subida = await subirImagen(archivo);
+          resultado.add(
+            ImagenPublicacion(url: subida.secureUrl, publicId: subida.publicId),
+          );
+          onProgreso?.call(++subidas, nuevas.length);
+      }
+    }
+    return resultado;
+  }
+
+  /// Campos de Firestore con las fotos: la lista completa en `imagenes` y la
+  /// portada también en `imagenUrl`/`imagenPublicId`, para las pantallas y
+  /// publicaciones de antes del carrusel.
+  static Map<String, dynamic> _camposImagenes(
+    List<ImagenPublicacion> imagenes,
+  ) => <String, dynamic>{
+    'imagenUrl': imagenes.first.url,
+    'imagenPublicId': imagenes.first.publicId,
+    'imagenes': <Map<String, dynamic>>[
+      for (final ImagenPublicacion imagen in imagenes) imagen.toMap(),
+    ],
+  };
+
+  /// Crea el documento de la publicación en Firestore, ya con las fotos
+  /// subidas a Cloudinary (ver [subirImagenes]); la primera es la portada.
   Future<void> crearPublicacion({
-    required String imagenUrl,
-    required String imagenPublicId,
+    required List<ImagenPublicacion> imagenes,
     String? descripcion,
     String? ubicacion,
   }) async {
@@ -473,6 +649,13 @@ class PublicacionService {
       throw const PublicacionServiceException(
         'No hay un usuario autenticado para crear la publicación.',
         code: 'user-not-authenticated',
+      );
+    }
+    final String? errorCantidad = validarCantidadFotos(imagenes.length);
+    if (errorCantidad != null) {
+      throw PublicacionServiceException(
+        errorCantidad,
+        code: 'cantidad-fotos-invalida',
       );
     }
     final String? ubicacionLimpia = normalizarUbicacion(ubicacion);
@@ -492,8 +675,7 @@ class PublicacionService {
       await documento.set(<String, dynamic>{
         'id': documento.id,
         'uid': usuario.uid,
-        'imagenUrl': imagenUrl,
-        'imagenPublicId': imagenPublicId,
+        ..._camposImagenes(imagenes),
         'descripcion': (descripcion == null || descripcion.trim().isEmpty)
             ? null
             : descripcion.trim(),
@@ -518,7 +700,8 @@ class PublicacionService {
 
   /// Edita la publicación [publicacionId] del usuario autenticado: cambia la
   /// descripción, la ubicación ([ubicacion] `null` la deja igual; vacía la
-  /// quita) y/o reemplaza la foto por [nuevaImagen].
+  /// quita) y/o las fotos del carrusel ([imagenes] `null` las deja igual;
+  /// si no, es la lista final en orden, con fotos ya publicadas y nuevas).
   ///
   /// Lee el documento actual del servidor para validar que exista y que el
   /// usuario sea su autor (ver [validarEdicion]); las reglas de Firestore
@@ -526,13 +709,14 @@ class PublicacionService {
   /// no escribe nada y devuelve la publicación tal cual; si los hay, marca
   /// `editado = true` y registra `fechaEdicion`.
   ///
-  /// La foto anterior no se borra de Cloudinary (borrar exige la API secret,
-  /// que no puede vivir en la app): solo deja de referenciarse.
+  /// Las fotos quitadas no se borran de Cloudinary (borrar exige la API
+  /// secret, que no puede vivir en la app): solo dejan de referenciarse.
   Future<Publicacion> editarPublicacion({
     required String publicacionId,
     String? descripcion,
     String? ubicacion,
-    ArchivoLocal? nuevaImagen,
+    List<FotoEdicion>? imagenes,
+    void Function(int subidas, int total)? onProgreso,
   }) async {
     final DocumentReference<Map<String, dynamic>> documento = _firestore
         .collection('publicaciones')
@@ -547,7 +731,7 @@ class PublicacionService {
         uidUsuario: _auth.currentUser?.uid,
         descripcion: descripcion,
         ubicacion: ubicacion,
-        nuevaImagen: nuevaImagen,
+        imagenes: imagenes,
       );
     } on FirebaseException catch (error) {
       throw PublicacionServiceException(
@@ -560,9 +744,10 @@ class PublicacionService {
       return edicion.actual;
     }
 
-    final CloudinarySubida? subida = nuevaImagen == null
+    final List<FotoEdicion>? fotos = edicion.imagenes;
+    final List<ImagenPublicacion>? subidas = fotos == null
         ? null
-        : await subirImagen(nuevaImagen);
+        : await subirImagenes(fotos, onProgreso: onProgreso);
     final Timestamp fechaEdicion = Timestamp.now();
 
     try {
@@ -571,8 +756,7 @@ class PublicacionService {
         if (edicion.cambiaUbicacion) 'ubicacion': edicion.ubicacion,
         if (edicion.cambiaUbicacion)
           'ubicacionTerminos': terminosDeUbicacion(edicion.ubicacion),
-        if (subida != null) 'imagenUrl': subida.secureUrl,
-        if (subida != null) 'imagenPublicId': subida.publicId,
+        if (subidas != null) ..._camposImagenes(subidas),
         'editado': true,
         'fechaEdicion': fechaEdicion,
       });
@@ -584,8 +768,7 @@ class PublicacionService {
     }
 
     return edicion.actual.copyWith(
-      imagenUrl: subida?.secureUrl,
-      imagenPublicId: subida?.publicId,
+      imagenes: subidas,
       descripcion: () => edicion.descripcion,
       ubicacion: () => edicion.ubicacion,
       editado: true,

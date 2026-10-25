@@ -5,6 +5,7 @@ import 'app_theme.dart';
 import 'editar_publicacion_screen.dart';
 import 'form_styles.dart';
 import 'publicacion_service.dart';
+import 'widgets/carrusel_fotos.dart';
 
 const List<String> _meses = <String>[
   'enero',
@@ -187,36 +188,12 @@ class _PublicacionDetalleScreenState extends State<PublicacionDetalleScreen> {
                 tag: 'publicacion-${publicacion.id}',
                 child: AspectRatio(
                   aspectRatio: 1,
-                  child: Image.network(
-                    publicacion.imagenUrl,
-                    fit: BoxFit.cover,
-                    loadingBuilder:
-                        (
-                          BuildContext context,
-                          Widget child,
-                          ImageChunkEvent? progress,
-                        ) {
-                          if (progress == null) return child;
-                          return Container(
-                            color: Colors.white,
-                            child: const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          );
-                        },
-                    errorBuilder:
-                        (
-                          BuildContext context,
-                          Object error,
-                          StackTrace? stackTrace,
-                        ) => Container(
-                          color: Colors.white,
-                          child: Icon(
-                            Icons.broken_image_outlined,
-                            size: 48,
-                            color: AppTheme.textoSuave.withValues(alpha: 0.4),
-                          ),
-                        ),
+                  child: CarruselFotos(
+                    urls: <String>[
+                      for (final ImagenPublicacion imagen
+                          in publicacion.imagenes)
+                        imagen.url,
+                    ],
                   ),
                 ),
               ),

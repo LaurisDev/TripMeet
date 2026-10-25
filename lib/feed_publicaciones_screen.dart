@@ -10,7 +10,7 @@ import 'perfil_usuario_screen.dart';
 import 'publicacion_detalle_screen.dart';
 import 'publicacion_service.dart';
 import 'widgets/aviso_error.dart';
-import 'widgets/imagen_remota.dart';
+import 'widgets/carrusel_fotos.dart';
 
 const List<String> _meses = <String>[
   'ene',
@@ -661,18 +661,19 @@ class _TarjetaPublicacionState extends State<_TarjetaPublicacion> {
   }
 
   Widget _buildFoto(Publicacion publicacion) {
-    return GestureDetector(
-      onTap: widget.onAbrir,
-      // Doble toque en la foto: da "me gusta" (no lo quita).
-      onDoubleTap: () => widget.onMeGusta(true),
-      child: Hero(
-        tag: 'publicacion-${publicacion.id}',
-        child: AspectRatio(
-          aspectRatio: 1,
-          child: ImagenRemota(
-            url: publicacion.imagenUrl,
-            fondo: AppTheme.crema,
-          ),
+    return Hero(
+      tag: 'publicacion-${publicacion.id}',
+      child: AspectRatio(
+        aspectRatio: 1,
+        child: CarruselFotos(
+          urls: <String>[
+            for (final ImagenPublicacion imagen in publicacion.imagenes)
+              imagen.url,
+          ],
+          fondo: AppTheme.crema,
+          onTap: widget.onAbrir,
+          // Doble toque en la foto: da "me gusta" (no lo quita).
+          onDoubleTap: () => widget.onMeGusta(true),
         ),
       ),
     );
