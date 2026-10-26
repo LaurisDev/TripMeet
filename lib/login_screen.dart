@@ -269,10 +269,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      final String correo = _correoController.text.trim().toLowerCase();
-
       // Cuenta administrativa destinada a la demostración.
-      if (correo == 'piperuizyepes@gmail.com') {
+      if (esCorreoAdministrador(_correoController.text)) {
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(
