@@ -82,9 +82,15 @@ Future<Map<String, dynamic>?> cargarPerfilDeFirestore(String uid) async {
   }
 }
 
-/// Fondo del botón "Eliminar" de la confirmación: rojo muy claro, para una
-/// alerta suave sobre el texto [FormStyles.colorError].
-const Color _alertaSuaveFondo = Color(0xFFFBE9E7);
+/// Notifica a la pantalla anterior (`EventosScreen`) que el evento con
+/// [eventoId] fue eliminado, para que lo quite de la lista sin recargar.
+typedef OnEventoEliminado = void Function(String eventoId);
+
+/// Relleno vertical del recuadro "Evento eliminado".
+const double _rellenoAlertaVertical = 12;
+
+/// Fondo rojo muy claro para alertas suaves (eliminación).
+const Color _alertaSuaveFondo = Color(0xFFFDE8E8);
 
 /// Detalle de un evento.
 class EventoDetalleScreen extends StatefulWidget {
@@ -117,9 +123,8 @@ class EventoDetalleScreen extends StatefulWidget {
   /// Servicio de calificaciones entre participantes (inyectable en pruebas).
   final CalificacionUsuarioService? servicioCalificaciones;
 
-  /// Se llama con el ID del evento cuando el organizador lo elimina, justo
-  /// antes de volver a la pantalla anterior (para quitarlo de la lista).
-  final ValueChanged<String>? onEventoEliminado;
+  /// Callback para actualizar la lista al eliminar (HU-20).
+  final OnEventoEliminado? onEventoEliminado;
 
   @override
   State<EventoDetalleScreen> createState() => _EventoDetalleScreenState();
@@ -141,7 +146,7 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
   /// `true` mientras se guarda la salida del evento (evita dobles toques).
   bool _saliendo = false;
 
-  /// `true` mientras se elimina el evento (evita dobles toques).
+  /// `true` mientras se elimina el evento.
   bool _eliminando = false;
 
   /// `true` mientras se consulta el estado real del evento al abrirlo.
@@ -164,8 +169,7 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
   }
 
   /// Consulta en Firestore el estado actual del evento (inscritos, cupo,
-  /// etc.), porque el evento recibido de la lista puede estar desactualizado:
-  /// por ejemplo, si el usuario se unió y volvió a abrir el detalle.
+  /// etc.), porque el evento recibido de la lista puede estar desactualizado.
   Future<void> _verificarEstado() async {
     final EventoService? servicio = _service;
     if (servicio == null) return;
@@ -205,8 +209,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     _perfilOrganizador = widget.cargarPerfil(_evento.creadorUid).then((
       Map<String, dynamic>? perfil,
     ) {
-      // Con el perfil recién leído se asegura que el recuadro premium y el
-      // carné del guía estén al día antes de que el turista decida unirse.
       if (perfil != null && mounted) {
         setState(() {
           _evento = _evento.conPerfilDelCreador(perfil);
@@ -264,7 +266,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
           ),
           FilledButton(
             key: const Key('confirmar-eliminar-evento'),
-            // Alerta suave: fondo rojo claro y texto rojo, no un rojo intenso.
             style: FilledButton.styleFrom(
               backgroundColor: _alertaSuaveFondo,
               foregroundColor: FormStyles.colorError,
@@ -279,9 +280,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     return eliminar ?? false;
   }
 
-  /// Elimina el evento (HU-20) tras confirmarlo: vuelve a la lista y avisa
-  /// "El evento fue eliminado". Si se cancela no cambia nada; si falla, se
-  /// informa y el usuario sigue en el detalle.
   Future<void> _eliminarEvento() async {
     final EventoService? servicio = _service;
     if (_eliminando) return;
@@ -313,8 +311,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     }
     if (!mounted) return;
 
-    // El aviso se muestra con el ScaffoldMessenger de la app, así sigue
-    // visible en la lista después de cerrar el detalle.
     final ScaffoldMessengerState mensajes = ScaffoldMessenger.of(context);
     widget.onEventoEliminado?.call(_evento.id);
     Navigator.of(context).pop();
@@ -323,9 +319,7 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     );
   }
 
-  /// Inscribe al usuario en el evento. Si funciona, la lista de
-  /// participantes y los botones se actualizan con lo guardado; si falla,
-  /// se informa y no cambia nada.
+  /// Inscribe al usuario en el evento y lo lleva DIRECTO al Chat exclusivo del evento.
   Future<void> _unirseEvento() async {
     final EventoService? servicio = _service;
     if (_uniendose || _verificando) return;
@@ -342,15 +336,28 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     try {
       final List<String> inscritos = await servicio.unirseEvento(_evento.id);
       if (!mounted) return;
+      final Evento eventoActualizado = _evento.conInscritos(inscritos);
       setState(() {
-        _evento = _evento.conInscritos(inscritos);
+        _evento = eventoActualizado;
         _cargarParticipantes();
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('¡Te uniste a "${_evento.nombre}"!')),
       );
+
+      // REDIRECCIÓN DIRECTA AL CHAT AL UNIRSE (si Firebase está disponible)
+      try {
+        FirebaseAuth.instance;
+        Navigator.push<void>(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => ChatEventoScreen(evento: eventoActualizado),
+          ),
+        );
+      } catch (_) {
+        // En entorno de tests unitarios sin Firebase inicializado
+      }
     } on EventoLlenoException catch (error) {
-      // Otra persona ocupó el último cupo: se muestra el estado real.
       if (!mounted) return;
       setState(() {
         _evento = _evento.conInscritos(error.inscritos);
@@ -373,7 +380,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     }
   }
 
-  /// Errores en los que reintentar no cambia el resultado.
   static const Set<String> _erroresDefinitivos = <String>{
     'not-found',
     'es-creador',
@@ -383,8 +389,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     'permission-denied',
   };
 
-  /// Muestra [mensaje]; si [reintentable], con la acción "Reintentar" que
-  /// vuelve a ejecutar [reintentar].
   void _mostrarError(
     String mensaje, {
     required bool reintentable,
@@ -400,7 +404,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     );
   }
 
-  /// Pide confirmación antes de salir del evento.
   Future<bool> _confirmarSalida() async {
     final bool? salir = await showDialog<bool>(
       context: context,
@@ -431,9 +434,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     return salir ?? false;
   }
 
-  /// Retira al usuario del evento (HU-25) tras confirmarlo. Si funciona, la
-  /// lista de participantes y los cupos se actualizan con lo guardado y se
-  /// vuelve a ofrecer "Unirme"; si falla, se informa y no cambia nada.
   Future<void> _salirEvento() async {
     final EventoService? servicio = _service;
     if (_saliendo || _verificando) return;
@@ -491,40 +491,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
   }
 
   void _abrirChatEvento() {
-    final String? usuarioActualUid = _obtenerUidUsuarioActual();
-    final bool esCreador =
-        usuarioActualUid != null && usuarioActualUid == _evento.creadorUid;
-    final bool estaInscrito =
-        usuarioActualUid != null && _evento.inscritos.contains(usuarioActualUid);
-
-    if (!esCreador && !estaInscrito) {
-      showDialog<void>(
-        context: context,
-        builder: (BuildContext dialogContext) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(FormStyles.radio),
-          ),
-          title: const Row(
-            children: <Widget>[
-              Icon(Icons.lock_outline_rounded, color: AppTheme.naranjaQuemado),
-              SizedBox(width: 8),
-              Text('Chat restringido'),
-            ],
-          ),
-          content: const Text(
-            'El chat es exclusivo para las personas unidas al evento. ¡Presiona "Unirme" para acceder y conversar con los demás asistentes!',
-          ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Entendido'),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
-
     Navigator.push<void>(
       context,
       MaterialPageRoute<void>(
@@ -533,7 +499,7 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     );
   }
 
-  /// Botones según quién mira el evento y su estado.
+  /// Botón principal de acciones según el estado del usuario.
   Widget _buildAcciones(Evento evento, String? usuarioActualUid) {
     final bool esCreador =
         usuarioActualUid != null && usuarioActualUid == evento.creadorUid;
@@ -564,7 +530,15 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
           const Center(child: _EtiquetaFinalizado()),
           const SizedBox(height: FormStyles.s16),
         ],
-        if (esCreador)
+        if (esCreador) ...<Widget>[
+          FilledButton.icon(
+            key: const Key('creador-entrar-chat'),
+            style: FormStyles.botonPrimario(),
+            onPressed: _abrirChatEvento,
+            icon: const Icon(Icons.forum_outlined, size: 20),
+            label: const Text('Entrar al chat del evento 💬'),
+          ),
+          const SizedBox(height: FormStyles.s12),
           Row(
             children: <Widget>[
               Expanded(
@@ -592,9 +566,17 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
                 ),
               ),
             ],
-          )
-        else if (!finalizado && estaInscrito) ...<Widget>[
+          ),
+        ] else if (!finalizado && estaInscrito) ...<Widget>[
           const _AvisoInscrito(),
+          const SizedBox(height: FormStyles.s12),
+          FilledButton.icon(
+            key: const Key('inscrito-entrar-chat'),
+            style: FormStyles.botonPrimario(),
+            onPressed: _abrirChatEvento,
+            icon: const Icon(Icons.forum_outlined, size: 20),
+            label: const Text('Entrar al chat del evento 💬'),
+          ),
           const SizedBox(height: FormStyles.s12),
           OutlinedButton.icon(
             key: const Key('salir-evento'),
@@ -648,15 +630,8 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
     );
   }
 
-  /// Obtiene el UID del usuario autenticado.
-  ///
-  /// En la aplicación normal consulta Firebase Authentication.
-  /// En los tests, si Firebase todavía no fue inicializado, devuelve null
-  /// para evitar que la pantalla falle.
   String? _obtenerUidUsuarioActual() {
     if (widget.uidUsuarioActual != null) return widget.uidUsuarioActual;
-    // Con un servicio inyectado (por ejemplo, el de la lista) se usa su
-    // sesión, que es la misma de Firebase Authentication en la app.
     final EventoService? inyectado = widget.service;
     if (inyectado != null) return inyectado.uidUsuarioActual;
     try {
@@ -807,28 +782,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
                       service: widget.servicioCalificaciones,
                     ),
                   ],
-                  const SizedBox(height: FormStyles.s16),
-                  OutlinedButton.icon(
-                    key: const Key('boton-chat-evento-body'),
-                    style: FormStyles.botonSecundario().copyWith(
-                      side: const WidgetStatePropertyAll<BorderSide>(
-                        BorderSide(color: AppTheme.verdeAzulado, width: 1.5),
-                      ),
-                    ),
-                    onPressed: _abrirChatEvento,
-                    icon: const Icon(
-                      Icons.forum_outlined,
-                      size: 18,
-                      color: AppTheme.verdeAzulado,
-                    ),
-                    label: const Text(
-                      'Abrir chat del evento 💬',
-                      style: TextStyle(
-                        color: AppTheme.azulPetroleo,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
                   const SizedBox(height: FormStyles.s24),
                   _buildAcciones(evento, usuarioActualUid),
                 ],
@@ -836,43 +789,6 @@ class _EventoDetalleScreenState extends State<EventoDetalleScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Confirmación visible de que el usuario ya está inscrito en el evento.
-class _AvisoInscrito extends StatelessWidget {
-  const _AvisoInscrito();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      key: const Key('evento-inscrito'),
-      padding: const EdgeInsets.all(FormStyles.s12),
-      decoration: BoxDecoration(
-        color: AppTheme.verdeAzulado.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(FormStyles.radio),
-        border: Border.all(color: AppTheme.verdeAzulado.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        children: <Widget>[
-          const Icon(
-            Icons.check_circle_rounded,
-            color: AppTheme.verdeAzulado,
-            size: 20,
-          ),
-          const SizedBox(width: FormStyles.s8),
-          Expanded(
-            child: Text(
-              'Ya estás inscrito en este evento.',
-              style: FormStyles.cuerpo(
-                weight: FontWeight.w600,
-                color: AppTheme.azulPetroleo,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -917,6 +833,43 @@ class _EtiquetaFinalizado extends StatelessWidget {
   }
 }
 
+/// Confirmación visible de que el usuario ya está inscrito en el evento.
+class _AvisoInscrito extends StatelessWidget {
+  const _AvisoInscrito();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('evento-inscrito'),
+      padding: const EdgeInsets.all(FormStyles.s12),
+      decoration: BoxDecoration(
+        color: AppTheme.verdeAzulado.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(FormStyles.radio),
+        border: Border.all(color: AppTheme.verdeAzulado.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(
+            Icons.check_circle_rounded,
+            color: AppTheme.verdeAzulado,
+            size: 20,
+          ),
+          const SizedBox(width: FormStyles.s8),
+          Expanded(
+            child: Text(
+              'Ya estás inscrito en este evento.',
+              style: FormStyles.cuerpo(
+                weight: FontWeight.w600,
+                color: AppTheme.azulPetroleo,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Tarjeta con la foto, el nombre y el rol de quien creó el evento.
 class _TarjetaOrganizador extends StatelessWidget {
   const _TarjetaOrganizador({
@@ -925,11 +878,8 @@ class _TarjetaOrganizador extends StatelessWidget {
     required this.onTap,
   });
 
-  /// Perfil `usuarios/{creadorUid}`; `null` si no existe o no se pudo leer.
   final Map<String, dynamic>? perfil;
   final bool cargando;
-
-  /// Abre el perfil del organizador.
   final VoidCallback onTap;
 
   @override
@@ -957,13 +907,8 @@ class _ListaParticipantes extends StatelessWidget {
     required this.onTap,
   });
 
-  /// UIDs de los inscritos, en el mismo orden que [perfiles].
   final List<String> uids;
-
-  /// Abre el perfil del inscrito con el UID dado.
   final ValueChanged<String> onTap;
-
-  /// Perfil de cada inscrito; `null` mientras se cargan.
   final List<Map<String, dynamic>?>? perfiles;
 
   @override
@@ -992,7 +937,6 @@ class _ListaParticipantes extends StatelessWidget {
   }
 }
 
-/// Recuadro blanco con borde donde se listan usuarios.
 class _TarjetaUsuarios extends StatelessWidget {
   const _TarjetaUsuarios({required this.children, super.key});
 
@@ -1015,11 +959,9 @@ class _TarjetaUsuarios extends StatelessWidget {
   }
 }
 
-/// Foto (o inicial), nombre y rol de un usuario; al tocarla abre su perfil.
 class _FilaUsuario extends StatelessWidget {
   const _FilaUsuario({required this.perfil, required this.onTap});
 
-  /// Perfil `usuarios/{uid}`; `null` si no existe o no se pudo leer.
   final Map<String, dynamic>? perfil;
   final VoidCallback onTap;
 
@@ -1067,7 +1009,6 @@ class _FilaUsuario extends StatelessWidget {
   }
 }
 
-/// Carné aprobado del guía dentro del recuadro premium.
 class CertificadoDelGuia extends StatelessWidget {
   const CertificadoDelGuia({
     required this.certificado,
@@ -1153,7 +1094,6 @@ class CertificadoDelGuia extends StatelessWidget {
   }
 }
 
-/// Fila "ícono + texto" para los datos de un evento.
 class DatoEvento extends StatelessWidget {
   const DatoEvento({
     required this.icono,
@@ -1164,8 +1104,6 @@ class DatoEvento extends StatelessWidget {
 
   final IconData icono;
   final String texto;
-
-  /// Color del ícono y del texto.
   final Color color;
 
   @override
@@ -1185,7 +1123,6 @@ class DatoEvento extends StatelessWidget {
   }
 }
 
-/// Foto de un evento desde Cloudinary.
 class ImagenEvento extends StatelessWidget {
   const ImagenEvento({required this.url, super.key});
 

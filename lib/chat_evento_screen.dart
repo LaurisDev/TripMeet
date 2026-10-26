@@ -10,6 +10,7 @@ import 'cloudinary_service.dart';
 import 'evento_service.dart';
 import 'form_styles.dart';
 import 'guia_service.dart' show ArchivoLocal;
+import 'notificacion_service.dart';
 import 'widgets/archivo_picker.dart';
 
 /// Modelo de datos para las opciones de una encuesta en el chat.
@@ -172,7 +173,6 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
 
   bool _enviando = false;
   bool _subiendoFoto = false;
-  int _ultimoConteoMensajes = 0;
 
   /// Verifica si el usuario actual es organizador o participante unido al evento.
   bool get _esParticipanteOOrganizador {
@@ -198,75 +198,10 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
         .orderBy('fecha', descending: false)
         .snapshots()
         .map((QuerySnapshot<Map<String, dynamic>> snapshot) {
-      final List<MensajeEvento> lista = snapshot.docs
+      return snapshot.docs
           .map((doc) => MensajeEvento.fromFirestore(doc, widget.evento.id))
           .toList();
-
-      // Notificación flotante al recibir mensajes nuevos de otros participantes
-      final String? uidActual = _auth.currentUser?.uid;
-      if (lista.length > _ultimoConteoMensajes &&
-          _ultimoConteoMensajes > 0 &&
-          lista.isNotEmpty) {
-        final MensajeEvento ultimo = lista.last;
-        if (ultimo.usuarioId != uidActual) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _notificarNuevoMensaje(ultimo);
-          });
-        }
-      }
-      _ultimoConteoMensajes = lista.length;
-
-      return lista;
     });
-  }
-
-  void _notificarNuevoMensaje(MensajeEvento mensaje) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.only(top: 10, left: 16, right: 16),
-        backgroundColor: AppTheme.azulPetroleo,
-        duration: const Duration(seconds: 3),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        content: Row(
-          children: <Widget>[
-            const Icon(
-              Icons.notifications_active_rounded,
-              color: Colors.white,
-              size: 20,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    'Nuevo mensaje de ${mensaje.nombreUsuario}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      fontSize: 12,
-                    ),
-                  ),
-                  Text(
-                    mensaje.texto,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style:
-                        const TextStyle(color: Colors.white70, fontSize: 11.5),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   void _scrollToBottom() {
@@ -315,6 +250,23 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
           .doc(widget.evento.id)
           .collection('mensajes')
           .add(nuevoMensaje.toFirestore());
+
+      // Notificaciones externas para otros participantes fuera del chat
+      final NotificacionService notiService = NotificacionService(
+        firestore: _firestore,
+      );
+      for (final String inscritoUid in widget.evento.inscritos) {
+        if (inscritoUid != usuario.uid) {
+          try {
+            await notiService.crearNotificacion(
+              usuarioId: inscritoUid,
+              titulo: 'Mensaje en ${widget.evento.nombre}',
+              mensaje: '$nombre: $texto',
+              tipo: 'chat_evento',
+            );
+          } catch (_) {}
+        }
+      }
 
       _scrollToBottom();
     } catch (e) {
@@ -503,7 +455,7 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
                         .add(mensajeEncuesta.toFirestore());
 
                     if (mounted) {
-                      Navigator.of(dialogContext).pop();
+                      Navigator.of(context).pop();
                       _scrollToBottom();
                     }
                   },
@@ -580,6 +532,7 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
               onPressed: () async {
                 final String nuevoTexto = editController.text.trim();
                 if (nuevoTexto.isEmpty) return;
+                final NavigatorState nav = Navigator.of(dialogContext);
 
                 await _firestore
                     .collection('eventos')
@@ -591,7 +544,7 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
                   'editado': true,
                 });
 
-                if (mounted) Navigator.of(dialogContext).pop();
+                nav.pop();
               },
               child: const Text('Guardar'),
             ),
@@ -1083,7 +1036,7 @@ class _ChatEventoScreenState extends State<ChatEventoScreen> {
         padding: const EdgeInsets.symmetric(horizontal: FormStyles.s16),
         scrollDirection: Axis.horizontal,
         itemCount: sugerencias.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (BuildContext context, int index) {
           final Map<String, String> item = sugerencias[index];
           return ActionChip(
