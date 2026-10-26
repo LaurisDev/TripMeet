@@ -1,6 +1,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'gestion_usuarios_screen.dart';
 import 'verificacion_admin_screen.dart';
 
 import 'guia_service.dart';
@@ -356,6 +357,18 @@ class _PanelAdminCertificadosScreenState
       appBar: AppBar(
   title: const Text('Revisión de certificados'),
   actions: [
+    IconButton(
+      tooltip: 'Usuarios',
+      icon: const Icon(Icons.people_alt_outlined),
+      onPressed: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const GestionUsuariosScreen(),
+          ),
+        );
+      },
+    ),
     IconButton(
       tooltip: 'Verificación de identidad',
       icon: const Icon(Icons.verified_user_outlined),
