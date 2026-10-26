@@ -8,7 +8,8 @@ import 'widgets/aviso_error.dart';
 
 /// Panel del administrador (HU-30): listado completo de usuarios registrados,
 /// paginado, con búsqueda por nombre o correo. Al tocar un usuario se abre
-/// su perfil.
+/// su perfil; desde su menú se puede suspender la cuenta con un motivo o
+/// quitar la suspensión (HU-31).
 class GestionUsuariosScreen extends StatefulWidget {
   const GestionUsuariosScreen({this.service, this.abrirUsuario, super.key});
 
@@ -80,6 +81,74 @@ class _GestionUsuariosScreenState extends State<GestionUsuariosScreen> {
         builder: (_) => PerfilUsuarioScreen(uid: usuario.uid),
       ),
     );
+  }
+
+  /// Pide el motivo y la confirmación; si se cancela no cambia nada. Si se
+  /// confirma, suspende la cuenta y recarga el listado.
+  Future<void> _suspender(UsuarioListado usuario) async {
+    final String? motivo = await showDialog<String>(
+      context: context,
+      builder: (_) => _DialogoSuspension(usuario: usuario),
+    );
+    if (motivo == null || !mounted) return;
+
+    final ScaffoldMessengerState mensajes = ScaffoldMessenger.of(context);
+    try {
+      await _service.suspenderUsuario(usuario.uid, motivo);
+      mensajes.showSnackBar(
+        SnackBar(content: Text('Se suspendió la cuenta de ${usuario.nombre}.')),
+      );
+      if (mounted) await _cargar();
+    } on UsuariosAdminException catch (error) {
+      mensajes.showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+
+  /// Pide confirmación para quitar la suspensión; si se cancela no cambia
+  /// nada. Si se confirma, reactiva la cuenta y recarga el listado.
+  Future<void> _quitarSuspension(UsuarioListado usuario) async {
+    final String motivo = usuario.motivoSuspension?.trim() ?? '';
+    final bool? confirmar = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) => AlertDialog(
+        title: Text(
+          '¿Quitar la suspensión de ${usuario.nombre}?',
+          style: FormStyles.titulo(pequena: true),
+        ),
+        content: Text(
+          motivo.isEmpty
+              ? 'El usuario podrá volver a iniciar sesión.'
+              : 'Motivo de la suspensión: $motivo\n\n'
+                    'El usuario podrá volver a iniciar sesión.',
+          style: FormStyles.subtitulo(pequena: true),
+        ),
+        actions: <Widget>[
+          TextButton(
+            key: const Key('cancelar-quitar-suspension'),
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            key: const Key('confirmar-quitar-suspension'),
+            style: FormStyles.botonPrimario(),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Quitar suspensión'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true || !mounted) return;
+
+    final ScaffoldMessengerState mensajes = ScaffoldMessenger.of(context);
+    try {
+      await _service.quitarSuspension(usuario.uid);
+      mensajes.showSnackBar(
+        SnackBar(content: Text('Se reactivó la cuenta de ${usuario.nombre}.')),
+      );
+      if (mounted) await _cargar();
+    } on UsuariosAdminException catch (error) {
+      mensajes.showSnackBar(SnackBar(content: Text(error.message)));
+    }
   }
 
   @override
@@ -221,6 +290,8 @@ class _GestionUsuariosScreenState extends State<GestionUsuariosScreen> {
               itemBuilder: (BuildContext context, int i) => _FilaUsuario(
                 usuario: pagina.usuarios[i],
                 onTap: () => _abrir(pagina.usuarios[i]),
+                onSuspender: () => _suspender(pagina.usuarios[i]),
+                onQuitarSuspension: () => _quitarSuspension(pagina.usuarios[i]),
               ),
             ),
           ),
@@ -233,10 +304,17 @@ class _GestionUsuariosScreenState extends State<GestionUsuariosScreen> {
 }
 
 class _FilaUsuario extends StatelessWidget {
-  const _FilaUsuario({required this.usuario, required this.onTap});
+  const _FilaUsuario({
+    required this.usuario,
+    required this.onTap,
+    required this.onSuspender,
+    required this.onQuitarSuspension,
+  });
 
   final UsuarioListado usuario;
   final VoidCallback onTap;
+  final VoidCallback onSuspender;
+  final VoidCallback onQuitarSuspension;
 
   @override
   Widget build(BuildContext context) {
@@ -310,14 +388,142 @@ class _FilaUsuario extends StatelessWidget {
                   ),
                 ),
               ],
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: AppTheme.textoSuave,
+              if (usuario.suspendido) ...<Widget>[
+                const SizedBox(width: FormStyles.s8),
+                Container(
+                  key: Key('suspendido-${usuario.uid}'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: FormStyles.s8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _alertaSuaveFondo,
+                    borderRadius: BorderRadius.circular(FormStyles.radioPill),
+                  ),
+                  child: Text(
+                    'Suspendida',
+                    style: FormStyles.cuerpo(
+                      size: 12,
+                      color: FormStyles.colorError,
+                    ),
+                  ),
+                ),
+              ],
+              PopupMenuButton<String>(
+                key: Key('acciones-${usuario.uid}'),
+                tooltip: 'Acciones',
+                icon: const Icon(
+                  Icons.more_vert_rounded,
+                  color: AppTheme.textoSuave,
+                ),
+                onSelected: (_) =>
+                    usuario.suspendido ? onQuitarSuspension() : onSuspender(),
+                itemBuilder: (_) => <PopupMenuEntry<String>>[
+                  if (usuario.suspendido)
+                    const PopupMenuItem<String>(
+                      key: Key('opcion-quitar-suspension'),
+                      value: 'quitar-suspension',
+                      child: Text('Quitar suspensión'),
+                    )
+                  else
+                    const PopupMenuItem<String>(
+                      key: Key('opcion-suspender'),
+                      value: 'suspender',
+                      child: Text('Suspender cuenta'),
+                    ),
+                ],
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Fondo rojo claro de las alertas suaves (mismo tono que al eliminar un
+/// evento).
+const Color _alertaSuaveFondo = Color(0xFFFBE9E7);
+
+/// Diálogo para suspender una cuenta: pide el motivo (obligatorio) y la
+/// confirmación. Devuelve el motivo, o `null` si se cancela.
+class _DialogoSuspension extends StatefulWidget {
+  const _DialogoSuspension({required this.usuario});
+
+  final UsuarioListado usuario;
+
+  @override
+  State<_DialogoSuspension> createState() => _DialogoSuspensionState();
+}
+
+class _DialogoSuspensionState extends State<_DialogoSuspension> {
+  final TextEditingController _motivo = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _motivo.dispose();
+    super.dispose();
+  }
+
+  void _confirmar() {
+    final String motivo = _motivo.text.trim();
+    if (motivo.isEmpty) {
+      setState(() => _error = 'Debes escribir el motivo de la suspensión.');
+      return;
+    }
+    Navigator.of(context).pop(motivo);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        '¿Suspender la cuenta de ${widget.usuario.nombre}?',
+        style: FormStyles.titulo(pequena: true),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'El usuario no podrá iniciar sesión mientras la cuenta esté '
+            'suspendida.',
+            style: FormStyles.subtitulo(pequena: true),
+          ),
+          const SizedBox(height: FormStyles.s16),
+          TextField(
+            key: const Key('motivo-suspension'),
+            controller: _motivo,
+            maxLines: 3,
+            autofocus: true,
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
+            decoration: FormStyles.input(
+              label: 'Motivo de la suspensión',
+              errorText: _error,
+            ),
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        TextButton(
+          key: const Key('cancelar-suspension'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          key: const Key('confirmar-suspension'),
+          style: FilledButton.styleFrom(
+            backgroundColor: _alertaSuaveFondo,
+            foregroundColor: FormStyles.colorError,
+            elevation: 0,
+          ),
+          onPressed: _confirmar,
+          child: const Text('Suspender'),
+        ),
+      ],
     );
   }
 }

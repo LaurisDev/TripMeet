@@ -1,6 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+/// Correo de la cuenta administrativa. Solo esa cuenta entra al panel del
+/// administrador y puede gestionar usuarios (HU-30, HU-31).
+const String correoAdministrador = 'piperuizyepes@gmail.com';
+
+/// Indica si [correo] es el de la cuenta administrativa.
+bool esCorreoAdministrador(String? correo) =>
+    correo != null && correo.trim().toLowerCase() == correoAdministrador;
+
 /// Servicio encargado del registro y la persistencia de usuarios.
 class AuthService {
   /// Permite inyectar las dependencias para facilitar pruebas y reutilización.
@@ -12,12 +20,18 @@ class AuthService {
   final FirebaseFirestore _firestore;
 
   /// Inicia sesión con una cuenta existente de Firebase Authentication.
+  ///
+  /// Si la cuenta fue suspendida por el administrador (HU-31) se cierra la
+  /// sesión de inmediato y se lanza [AuthServiceException] con el código
+  /// `account-suspended` y el motivo.
   Future<UserCredential> iniciarSesion(String correo, String password) async {
     try {
-      return await _auth.signInWithEmailAndPassword(
-        email: correo.trim(),
-        password: password,
-      );
+      final UserCredential credenciales = await _auth
+          .signInWithEmailAndPassword(email: correo.trim(), password: password);
+      await _verificarCuentaNoSuspendida(credenciales.user);
+      return credenciales;
+    } on AuthServiceException {
+      rethrow;
     } on FirebaseAuthException catch (error) {
       throw AuthServiceException(
         _mensajeParaErrorDeLogin(error.code),
@@ -29,6 +43,36 @@ class AuthService {
         code: 'unknown-error',
       );
     }
+  }
+
+  /// Revisa `suspendido` en el perfil de [usuario]. Si está suspendido, o si
+  /// no se puede comprobar, cierra la sesión y lanza [AuthServiceException]
+  /// para no dejar entrar a una cuenta suspendida.
+  Future<void> _verificarCuentaNoSuspendida(User? usuario) async {
+    if (usuario == null) return;
+
+    final Map<String, dynamic>? perfil;
+    try {
+      perfil = (await _firestore.collection('usuarios').doc(usuario.uid).get())
+          .data();
+    } on FirebaseException catch (error) {
+      await _auth.signOut();
+      throw AuthServiceException(
+        'No se pudo comprobar el estado de la cuenta. Inténtalo de nuevo.',
+        code: error.code,
+      );
+    }
+
+    if (perfil?['suspendido'] != true) return;
+
+    await _auth.signOut();
+    final dynamic motivo = perfil?['motivoSuspension'];
+    throw AuthServiceException(
+      motivo is String && motivo.trim().isNotEmpty
+          ? 'Tu cuenta fue suspendida. Motivo: ${motivo.trim()}'
+          : 'Tu cuenta fue suspendida.',
+      code: 'account-suspended',
+    );
   }
 
   /// Consulta el rol del usuario autenticado en su perfil de Firestore.
