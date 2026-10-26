@@ -5,6 +5,7 @@ import 'app_theme.dart';
 import 'editar_publicacion_screen.dart';
 import 'form_styles.dart';
 import 'publicacion_service.dart';
+import 'reportes_admin_service.dart';
 import 'widgets/carrusel_fotos.dart';
 
 const List<String> _meses = <String>[
@@ -144,6 +145,75 @@ class _PublicacionDetalleScreenState extends State<PublicacionDetalleScreen> {
     Navigator.of(context).pop();
   }
 
+  Future<void> _reportarPublicacion() async {
+    final TextEditingController motivoController = TextEditingController();
+    final bool? enviar = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Reportar publicación'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Text(
+                'Por favor indica la razón por la que consideras que esta publicación incumple las normas:',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: motivoController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Ej. Contenido ofensivo, spam, violencia...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Enviar reporte'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (enviar != true || !mounted) return;
+    final String motivo = motivoController.text.trim();
+    if (motivo.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escribe un motivo para el reporte.')),
+      );
+      return;
+    }
+
+    try {
+      await ReportesAdminService().reportarPublicacion(
+        publicacionId: _publicacion.id,
+        autorPublicacionUid: _publicacion.uid,
+        imagenUrl: _publicacion.imagenUrl,
+        descripcionPublicacion: _publicacion.descripcion,
+        motivo: motivo,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reporte enviado a los administradores. ¡Gracias!'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo enviar el reporte: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final Publicacion publicacion = _publicacion;
@@ -177,7 +247,13 @@ class _PublicacionDetalleScreenState extends State<PublicacionDetalleScreen> {
                   color: FormStyles.colorError,
                   icon: const Icon(Icons.delete_outline_rounded),
                 ),
-            ],
+            ] else
+              IconButton(
+                key: const Key('reportar-publicacion-btn'),
+                icon: const Icon(Icons.flag_outlined, color: Colors.orange),
+                tooltip: 'Reportar publicación',
+                onPressed: _reportarPublicacion,
+              ),
           ],
         ),
         body: SafeArea(

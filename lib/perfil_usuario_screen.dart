@@ -17,6 +17,7 @@ import 'widgets/evento_guia_estilo.dart';
 import 'widgets/imagen_remota.dart';
 import 'guia_certificados_screen.dart';
 import 'captura_documento_screen.dart';
+import 'reportes_admin_service.dart';
 
 /// Lee las publicaciones de un usuario, de la más reciente a la más antigua.
 typedef CargarPublicaciones = Future<List<Publicacion>> Function(String uid);
@@ -994,10 +995,95 @@ class _TarjetaResena extends StatelessWidget {
         ],
         if (comentario.isNotEmpty) ...<Widget>[
           const SizedBox(height: FormStyles.s8),
-          Text(comentario, style: FormStyles.cuerpo()),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(child: Text(comentario, style: FormStyles.cuerpo())),
+              IconButton(
+                icon: const Icon(Icons.flag_outlined, size: 16, color: Colors.orange),
+                tooltip: 'Reportar reseña',
+                constraints: const BoxConstraints(),
+                padding: const EdgeInsets.all(2),
+                onPressed: () => _reportarResenaUsuario(context, datos),
+              ),
+            ],
+          ),
         ],
       ],
     );
+  }
+
+  Future<void> _reportarResenaUsuario(BuildContext context, Resena resena) async {
+    final TextEditingController motivoController = TextEditingController();
+    final bool? enviar = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Reportar reseña'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Text(
+                'Indica la razón por la que consideras que esta reseña es inapropiada:',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: motivoController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Ej. Lenguaje ofensivo, spam, mentira...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Enviar reporte'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (enviar != true) return;
+    final String motivo = motivoController.text.trim();
+    if (motivo.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Escribe un motivo para el reporte.')),
+        );
+      }
+      return;
+    }
+
+    try {
+      await ReportesAdminService().reportarResena(
+        resenaId: resena.id ?? '',
+        autorResenaNombre: resena.nombreUsuario,
+        comentarioResena: resena.comentario,
+        estrellas: resena.calificacion,
+        motivo: motivo,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Reporte de reseña enviado al administrador. ¡Gracias!'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo enviar el reporte: $e')),
+        );
+      }
+    }
   }
 }
 

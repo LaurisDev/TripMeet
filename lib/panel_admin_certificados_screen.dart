@@ -2,6 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'gestion_usuarios_screen.dart';
+import 'publicaciones_reportadas_admin_screen.dart';
+import 'resenas_reportadas_admin_screen.dart';
 import 'verificacion_admin_screen.dart';
 
 import 'guia_service.dart';
@@ -355,39 +357,82 @@ class _PanelAdminCertificadosScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-  title: const Text('Revisión de certificados'),
-  actions: [
-    IconButton(
-      tooltip: 'Usuarios',
-      icon: const Icon(Icons.people_alt_outlined),
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const GestionUsuariosScreen(),
+        title: const Text('Panel de Administración'),
+        actions: [
+          IconButton(
+            tooltip: 'Usuarios',
+            icon: const Icon(Icons.people_alt_outlined),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const GestionUsuariosScreen(),
+                ),
+              );
+            },
           ),
-        );
-      },
-    ),
-    IconButton(
-      tooltip: 'Verificación de identidad',
-      icon: const Icon(Icons.verified_user_outlined),
-      onPressed: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => VerificacionAdminScreen(),
+          IconButton(
+            tooltip: 'Verificación de identidad',
+            icon: const Icon(Icons.verified_user_outlined),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => VerificacionAdminScreen(),
+                ),
+              );
+            },
           ),
-        );
-      },
-    ),
-    IconButton(
-      tooltip: 'Actualizar solicitudes',
-      onPressed: _cargando ? null : _cargarSolicitudes,
-      icon: const Icon(Icons.refresh),
-    ),
-  ],
-),
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.report_problem_outlined),
+            tooltip: 'Moderación de reportes',
+            onSelected: (String opcion) {
+              if (opcion == 'resenas') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ResenasReportadasAdminScreen(),
+                  ),
+                );
+              } else if (opcion == 'publicaciones') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const PublicacionesReportadasAdminScreen(),
+                  ),
+                );
+              }
+            },
+            itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+              const PopupMenuItem<String>(
+                value: 'resenas',
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.rate_review_outlined, color: Colors.orange),
+                    SizedBox(width: 8),
+                    Text('Reseñas reportadas (HU-33)'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem<String>(
+                value: 'publicaciones',
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.photo_library_outlined, color: Colors.redAccent),
+                    SizedBox(width: 8),
+                    Text('Publicaciones reportadas (HU-34)'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          IconButton(
+            tooltip: 'Actualizar solicitudes',
+            onPressed: _cargando ? null : _cargarSolicitudes,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
       body: _cargando
           ? const Center(
               child: CircularProgressIndicator(),

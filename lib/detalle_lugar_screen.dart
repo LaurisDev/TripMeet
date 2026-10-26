@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'app_theme.dart';
 import 'lugares_service.dart';
 import 'perfil_usuario_screen.dart';
+import 'reportes_admin_service.dart';
 
 class DetalleLugarScreen extends StatefulWidget {
   final Lugar lugar;
@@ -295,6 +296,76 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
     );
   }
 
+  Future<void> _reportarResena(Resena resena) async {
+    final TextEditingController motivoController = TextEditingController();
+    final bool? enviar = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Reportar reseña'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const Text(
+                'Indica la razón por la que consideras que esta reseña es inapropiada:',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: motivoController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: 'Ej. Lenguaje ofensivo, spam, mentira...',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Enviar reporte'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (enviar != true || !mounted) return;
+    final String motivo = motivoController.text.trim();
+    if (motivo.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escribe un motivo para el reporte.')),
+      );
+      return;
+    }
+
+    try {
+      await ReportesAdminService().reportarResena(
+        resenaId: resena.id ?? '',
+        lugarId: widget.lugar.id,
+        autorResenaNombre: resena.nombreUsuario,
+        comentarioResena: resena.comentario,
+        estrellas: resena.calificacion,
+        motivo: motivo,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reporte de reseña enviado al administrador. ¡Gracias!'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo enviar el reporte: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -443,6 +514,14 @@ class _DetalleLugarScreenState extends State<DetalleLugarScreen> {
                           padding: const EdgeInsets.all(4),
                         ),
                       ],
+                    )
+                  else
+                    IconButton(
+                      icon: const Icon(Icons.flag_outlined, size: 18, color: Colors.orange),
+                      onPressed: () => _reportarResena(r),
+                      tooltip: 'Reportar reseña',
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(4),
                     ),
                 ],
               ),
