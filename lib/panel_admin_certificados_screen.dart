@@ -410,7 +410,12 @@ class _PanelAdminCertificadosScreenState
                   children: <Widget>[
                     Icon(Icons.rate_review_outlined, color: Colors.orange),
                     SizedBox(width: 8),
-                    Text('Reseñas reportadas (HU-33)'),
+                    Expanded(
+                      child: Text(
+                        'Reseñas reportadas',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -420,7 +425,12 @@ class _PanelAdminCertificadosScreenState
                   children: <Widget>[
                     Icon(Icons.photo_library_outlined, color: Colors.redAccent),
                     SizedBox(width: 8),
-                    Text('Publicaciones reportadas (HU-34)'),
+                    Expanded(
+                      child: Text(
+                        'Publicaciones reportadas',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ],
                 ),
               ),
